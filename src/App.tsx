@@ -1,15 +1,15 @@
 import { useState, useEffect } from 'react';
 
-// --- FIREBASE & AUTH ---
+// firebase
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import { auth } from './services/firebase'; 
 import { logout } from './services/auth';
-import { subscribeToRoom, updateTimerState, joinRoomById, toggleRoomPrivacy } from './services/rooms';
+import { subscribeToRoom, updateTimerState, joinRoomById, toggleRoomPrivacy, endRoom } from './services/rooms';
 
-// --- AGORA (VIDEO) ---
+// agora
 import AgoraRTC, { AgoraRTCProvider } from "agora-rtc-react";
 
-// --- COMPONENTS ---
+// componentes
 import { VideoRoom } from './components/VideoRoom';
 import { BibleReader } from './components/BibleReader';
 import { Login } from './components/Login';
@@ -17,31 +17,27 @@ import { Lobby } from './components/Lobby';
 import { ChatRoom } from './components/ChatRoom';
 import { ParticipantsList } from './components/ParticipantsList';
 import { ProfileEditor } from './components/ProfileEditor';
+import { FeedbackWidget } from './components/FeedbackWidget';
 
-// --- HOOKS & ICONS ---
+// hooks y utilidades
 import { usePomodoro } from './hooks/usePomodoro';
 import { Video as VideoIcon, LogOut, User as UserIcon, Lock, Globe, Clock, Pause, Play, RotateCcw, Loader2 } from 'lucide-react';
 
-// Inicializamos el cliente de Agora fuera del componente (Singleton)
 const agoraClient = AgoraRTC.createClient({ mode: "rtc", codec: "vp8" });
 
 function App() {
-  // --- ESTADOS GLOBALES ---
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const [currentRoomId, setCurrentRoomId] = useState<string | null>(null);
   
-  // --- ESTADOS DE SALA ---
   const [isHost, setIsHost] = useState(false);
   const [isRoomPrivate, setIsRoomPrivate] = useState(false);
   const [participants, setParticipants] = useState<string[]>([]);
   const [currentReading, setCurrentReading] = useState<{ reference: string, text: string } | undefined>(undefined);
 
-  // --- ESTADOS UI ---
   const [showProfile, setShowProfile] = useState(false);
   const [inCall, setInCall] = useState(false); 
 
-  // --- 1. AUTH LISTENER ---
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
@@ -50,11 +46,9 @@ function App() {
     return () => unsubscribe();
   }, []);
 
-  // --- 2. URL SYNC (Bidireccional) ---
   useEffect(() => {
     if (!user) return;
 
-    // A. Leer URL al iniciar o navegar (PopState)
     const syncRoomFromUrl = () => {
       const params = new URLSearchParams(window.location.search);
       const roomIdFromUrl = params.get('room');
@@ -70,20 +64,17 @@ function App() {
     return () => window.removeEventListener('popstate', syncRoomFromUrl);
   }, [user, currentRoomId]);
 
-  // B. Unirse a la sala en DB cuando cambia el ID
   useEffect(() => {
     if (user && currentRoomId) {
       joinRoomById(currentRoomId, user.uid).catch((err) => console.error("Error join:", err));
     }
   }, [currentRoomId, user]);
 
-  // Helper para URL visual
   const updateUrl = (roomId: string | null) => {
     const newUrl = roomId ? `${window.location.pathname}?room=${roomId}` : window.location.pathname;
     window.history.pushState({ path: newUrl }, '', newUrl);
   };
 
-  // --- 3. POMODORO LOGIC ---
   const { 
     timeLeft, isRunning, mode, 
     toggleTimer, resetTimer, changeMode,
@@ -96,12 +87,17 @@ function App() {
     return `${minutes}:${secs < 10 ? '0' : ''}${secs}`;
   };
 
-  // --- 4. FIREBASE REALTIME SYNC ---
   useEffect(() => {
     if (!currentRoomId || !user) return;
 
     const unsubscribe = subscribeToRoom(currentRoomId, (roomData) => {
-      if (!roomData) return; // Protección contra data vacía
+      if (!roomData) {
+        if (!isHost) alert("El anfitrión ha finalizado esta sesión.");
+        setInCall(false);
+        setCurrentRoomId(null);
+        window.history.pushState({ path: window.location.pathname }, '', window.location.pathname);
+        return;
+      }
 
       const amIHost = roomData.hostId === user.uid;
       setIsHost(amIHost);
@@ -109,7 +105,6 @@ function App() {
       setParticipants(roomData.participants || []);
       setCurrentReading(roomData.currentReading); 
 
-      // Sync del timer (Solo si soy invitado)
       if (!amIHost && roomData.timer) {
         setTimeLeft(roomData.timer.timeLeft);
         setIsRunning(roomData.timer.isRunning);
@@ -118,27 +113,30 @@ function App() {
     });
 
     return () => unsubscribe();
-  }, [currentRoomId, user, setTimeLeft, setIsRunning, setMode]); 
+  }, [currentRoomId, user, setTimeLeft, setIsRunning, setMode, isHost]); 
 
-  // Sync Host -> Cloud (Debounced)
   useEffect(() => {
     if (isHost && currentRoomId) {
       const timeout = setTimeout(() => {
         updateTimerState(currentRoomId, { timeLeft, isRunning, mode }).catch(console.error);
-      }, 1000); // 1s delay es más seguro para Firestore
+      }, 1000); 
       return () => clearTimeout(timeout);
     }
   }, [timeLeft, isRunning, mode, isHost, currentRoomId]);
 
-
-  // --- HANDLERS ---
   const handleEnterRoom = (id: string) => {
     setCurrentRoomId(id);
     updateUrl(id);
   };
 
-  const handleExitRoom = () => {
-    setInCall(false); // Cortar llamada primero
+  const handleExitRoom = async () => {
+    if (isHost && currentRoomId) {
+      const confirmClose = window.confirm("Eres el anfitrión. ¿Deseas cerrar y eliminar la sala para todos?");
+      if (confirmClose) {
+        await endRoom(currentRoomId);
+      }
+    }
+    setInCall(false); 
     setCurrentRoomId(null);
     updateUrl(null);
   };
@@ -148,7 +146,6 @@ function App() {
     await toggleRoomPrivacy(currentRoomId, !isRoomPrivate);
   };
 
-  // --- RENDER ---
   if (loading) return (
     <div className="min-h-screen flex items-center justify-center bg-saylo-bg text-saylo-muted">
       <Loader2 className="animate-spin text-saylo-primary" size={48} />
@@ -157,11 +154,9 @@ function App() {
 
   if (!user) return <Login />;
 
-  // 1. VISTA: LOBBY (Sin Sala)
   if (!currentRoomId) {
     return (
       <div className="min-h-screen bg-saylo-bg p-4 relative font-sans">
-        {/* Header Lobby */}
         <div className="absolute top-4 right-4 flex gap-3 z-10">
           <button 
             onClick={() => setShowProfile(!showProfile)} 
@@ -174,7 +169,6 @@ function App() {
           </button>
         </div>
 
-        {/* Modal de Perfil */}
         {showProfile && (
           <div className="absolute top-16 right-4 z-20 w-80">
             <ProfileEditor userId={user.uid} onClose={() => setShowProfile(false)} />
@@ -184,15 +178,15 @@ function App() {
         <div className="pt-20 flex justify-center">
            <Lobby userId={user.uid} onJoinRoom={handleEnterRoom} />
         </div>
+
+        <FeedbackWidget userId={user.uid} />
       </div>
     );
   }
 
-  // 2. VISTA: SALA (Room)
   return (
     <div className="min-h-screen bg-saylo-bg text-saylo-text flex flex-col font-sans">
       
-      {/* --- HEADER SALA --- */}
       <header className="h-16 border-b border-slate-800 bg-saylo-bg/90 backdrop-blur-md sticky top-0 z-50 flex items-center justify-between px-4 lg:px-8 shadow-lg">
         <div>
           <div className="flex items-center gap-2 text-[10px] font-bold tracking-widest text-saylo-muted uppercase mb-1">
@@ -238,10 +232,8 @@ function App() {
         </div>
       </header>
 
-      {/* --- CONTENIDO PRINCIPAL --- */}
       <main className="flex-1 p-4 lg:p-6 max-w-[1600px] mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-6 h-[calc(100vh-64px)]">
         
-        {/* COLUMNA IZQUIERDA (Biblia) */}
         <div className="lg:col-span-8 flex flex-col h-full max-h-full overflow-hidden">
            <div className="bg-saylo-card rounded-2xl border border-slate-800 overflow-hidden shadow-2xl flex-1 flex flex-col relative h-full">
               <div className="absolute top-0 left-0 w-1 h-full bg-saylo-primary opacity-50"></div>
@@ -251,10 +243,8 @@ function App() {
            </div>
         </div>
 
-        {/* COLUMNA DERECHA (Tools) */}
         <div className="lg:col-span-4 flex flex-col gap-4 h-full max-h-full overflow-hidden">
           
-          {/* 1. Timer */}
           <div className="bg-saylo-card p-6 rounded-2xl border border-slate-800 shadow-xl text-center relative overflow-hidden shrink-0">
             <div className={`absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-saylo-primary to-purple-500 transition-opacity duration-500 ${isRunning ? 'opacity-100' : 'opacity-30'}`}></div>
             
@@ -305,9 +295,7 @@ function App() {
 
           <ParticipantsList participantIds={participants} />
 
-          {/* 2. Chat o Video (Área Dinámica) */}
           <div className="flex-1 min-h-0 bg-saylo-card rounded-2xl border border-slate-800 overflow-hidden shadow-xl relative flex flex-col">
-             {/* Envolvemos TODA la App de Video con el Provider aquí para estabilidad */}
              <AgoraRTCProvider client={agoraClient}>
                 {inCall ? (
                    <VideoRoom roomId={currentRoomId} onLeave={() => setInCall(false)} />
@@ -319,6 +307,8 @@ function App() {
 
         </div>
       </main>
+
+      <FeedbackWidget userId={user.uid} />
     </div>
   );
 }

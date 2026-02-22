@@ -33,7 +33,8 @@ export const CommunityFeed = ({ userId }: Props) => {
     if (!newPostText.trim()) return;
     const profile = await getUserProfile(userId);
     const name = profile?.displayName || 'Usuario';
-    // Si no hay foto, mandamos un string vacío para que la base de datos no guarde emojis
+    
+    // Si no hay foto, mandamos un string vacío
     const avatar = profile?.photoURL || '';
 
     await createPost(userId, name, avatar, newPostText);
@@ -106,7 +107,12 @@ export const CommunityFeed = ({ userId }: Props) => {
                         alt={post.userName} 
                         className="w-full h-full object-cover" 
                       />
-                    ) : null} {/* null renderiza el fondo vacío sin emojis */}
+                    ) : (
+                      /* Avatar por defecto: Primera letra del nombre */
+                      <span className="text-white font-bold text-lg uppercase">
+                        {post.userName ? post.userName.charAt(0) : '?'}
+                      </span>
+                    )}
                   </div>
                   
                   {/* Nombre y Fecha */}

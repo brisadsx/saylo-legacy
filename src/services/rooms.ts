@@ -5,6 +5,7 @@ import {
   getDoc,
   getDocs,
   updateDoc, 
+  deleteDoc, 
   arrayUnion, 
   query, 
   where,
@@ -26,7 +27,6 @@ export const searchPublicRooms = async (topicQuery: string = ''): Promise<Room[]
     const cleanQuery = topicQuery.trim().toUpperCase();
 
     if (!cleanQuery) {
-      // Caso 1: Traer todas las públicas en espera
       q = query(
         roomsRef,
         where('isPrivate', '==', false),
@@ -34,7 +34,6 @@ export const searchPublicRooms = async (topicQuery: string = ''): Promise<Room[]
         orderBy('createdAt', 'desc')
       );
     } else {
-      // Caso 2: Búsqueda por prefijo de tema (Truco NoSQL para búsqueda de texto básica)
       q = query(
         roomsRef,
         where('isPrivate', '==', false),
@@ -54,19 +53,14 @@ export const searchPublicRooms = async (topicQuery: string = ''): Promise<Room[]
   }
 };
 
-/**
- * 2. CREAR SALA SIMPLE
- * Crea una sala pública por defecto. El host luego puede hacerla privada.
- */
 export const createNewRoom = async (userId: string, topicInput: string): Promise<string> => {
   const cleanTopic = topicInput.trim().toUpperCase() || 'GENERAL';
   
   try {
-    // Usamos Omit<Room, 'id'> para tipado estricto
     const newRoom: Omit<Room, 'id'> = {
       hostId: userId,
-      topicId: cleanTopic, // Aquí va el "tag" (versículo, libro, tema)
-      isPrivate: false,    // Pública por defecto al crear
+      topicId: cleanTopic,
+      isPrivate: false,
       language: 'es',
       createdAt: Date.now(),
       participants: [userId],
@@ -82,9 +76,6 @@ export const createNewRoom = async (userId: string, topicInput: string): Promise
   }
 };
 
-/**
- * 3. CAMBIAR PRIVACIDAD (Solo para el Host)
- */
 export const toggleRoomPrivacy = async (roomId: string, makePrivate: boolean) => {
   try {
     const roomRef = doc(db, ROOMS_COLLECTION, roomId);
@@ -95,14 +86,11 @@ export const toggleRoomPrivacy = async (roomId: string, makePrivate: boolean) =>
   }
 };
 
-// MANTENER: joinRoomById (para unirse con código)
 export const joinRoomById = async (roomId: string, userId: string): Promise<boolean> => {
-  // ... (Mantén el código que ya tenías para esto) ...
   try {
     const roomRef = doc(db, ROOMS_COLLECTION, roomId);
     const roomSnap = await getDoc(roomRef);
     if (!roomSnap.exists()) throw new Error("Sala no encontrada");
-    // Validar si está llena antes de unir (opcional, buen detalle senior)
     if (roomSnap.data().status === 'full') throw new Error("Sala llena");
 
     await updateDoc(roomRef, { participants: arrayUnion(userId) });
@@ -113,21 +101,18 @@ export const joinRoomById = async (roomId: string, userId: string): Promise<bool
   }
 };
 
-/* -------------------------------------------------------------------------- */
-/* UTILITIES                                  */
-/* -------------------------------------------------------------------------- */
 
-export const subscribeToRoom = (roomId: string, callback: (data: Room) => void) => {
+export const subscribeToRoom = (roomId: string, callback: (data: Room | null) => void) => {
   const roomRef = doc(db, ROOMS_COLLECTION, roomId);
   return onSnapshot(roomRef, (docSnap) => {
     if (docSnap.exists()) {
-      // Casteamos con seguridad porque confiamos en la estructura
       callback({ id: docSnap.id, ...docSnap.data() } as Room);
+    } else {
+      callback(null); // deja de suscribirse si la sala fue eliminada
     }
   });
 };
 
-// Solución al error de línea 132: Especificamos el tipo exacto del timer
 export const updateTimerState = async (roomId: string, newTimerState: Room['timer']) => {
   const roomRef = doc(db, ROOMS_COLLECTION, roomId);
   await updateDoc(roomRef, { timer: newTimerState });
@@ -135,11 +120,10 @@ export const updateTimerState = async (roomId: string, newTimerState: Room['time
 
 export const createPrivateRoom = async (userId: string): Promise<string> => {
   try {
-    // Usamos Omit<Room, 'id'> para mantener el tipado estricto
     const newRoom: Omit<Room, 'id'> = {
       hostId: userId,
-      topicId: 'PRIVADO', // Marcador especial
-      isPrivate: true,    // IMPORTANTE: Esto la hace invisible al buscador
+      topicId: 'PRIVADO', 
+      isPrivate: true,    
       language: 'es',
       createdAt: Date.now(),
       participants: [userId],
@@ -147,15 +131,12 @@ export const createPrivateRoom = async (userId: string): Promise<string> => {
       timer: { mode: 'focus', timeLeft: 25 * 60, isRunning: false }
     };
     
-    // Agregamos import { collection, addDoc } ... si no lo tienes a mano,
-    // pero ya deberías tenerlo importado arriba en este archivo.
     const docRef = await addDoc(collection(db, 'rooms'), newRoom);
     return docRef.id;
   } catch (error) {
     console.error("Error creando sala privada:", error);
     throw error;
   }
-
 };
 
 export const updateRoomReading = async (roomId: string, reading: { reference: string, text: string }) => {
@@ -166,5 +147,14 @@ export const updateRoomReading = async (roomId: string, reading: { reference: st
     });
   } catch (error) {
     console.error("Error actualizando lectura:", error);
+  }
+};
+
+export const endRoom = async (roomId: string) => {
+  try {
+    const roomRef = doc(db, ROOMS_COLLECTION, roomId);
+    await deleteDoc(roomRef);
+  } catch (error) {
+    console.error("Error eliminando la sala:", error);
   }
 };
