@@ -1,7 +1,24 @@
+/* declaramos fuente */
+@font-face {
+  font-family: 'NeueHaasThin';
+  src: url('./assets/fonts/NeueHaasDisplayThin.ttf') format('truetype');
+  font-weight: 100;
+  font-style: normal;
+  font-display: swap;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 4px;
+}
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background-color: rgba(0, 0, 0, 0.2);
+  border-radius: 20px;
+}
+
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
-
-body {
-  @apply bg-saylo-bg text-saylo-text antialiased;
-}

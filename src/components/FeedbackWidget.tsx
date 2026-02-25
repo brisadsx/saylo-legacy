@@ -1,91 +1,101 @@
 import { useState } from 'react';
 import { Bug, X, Send } from 'lucide-react';
-import { sendFeedback } from '../services/feedback';
+import { db } from '../services/firebase';
+import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
 
-export const FeedbackWidget = ({ userId }: { userId: string }) => {
+interface FeedbackWidgetProps {
+  userId: string;
+}
+
+export const FeedbackWidget = ({ userId }: FeedbackWidgetProps) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [message, setMessage] = useState('');
+  
+  const [sending, setSending] = useState(false);
   const [type, setType] = useState<'bug' | 'feature' | 'other'>('bug');
-  const [status, setStatus] = useState<'idle' | 'loading' | 'success'>('idle');
+  
+  const [text, setText] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!message.trim()) return;
+    if (!text.trim() || sending) return;
 
-    setStatus('loading');
+    setSending(true);
     try {
-      await sendFeedback(userId, type, message);
-      setStatus('success');
-      setTimeout(() => {
-        setIsOpen(false);
-        setStatus('idle');
-        setMessage('');
-      }, 2000);
+      await addDoc(collection(db, 'feedback'), {
+        userId,
+        type,
+        content: text.trim(),
+        status: 'new',
+        createdAt: serverTimestamp()
+      });
+     
+      setText('');
+      setIsOpen(false);
     } catch (error) {
-        console.error(error);
-      setStatus('idle');
-      alert("Hubo un error al enviar el reporte. Intenta de nuevo.");
+      console.error("Error enviando feedback:", error);
+      alert("Hubo un error al enviar tu reporte. Por favor, intenta de nuevo.");
+    } finally {
+      setSending(false);
     }
   };
 
-  if (!isOpen) {
-    return (
-      <button 
-        onClick={() => setIsOpen(true)}
-        className="fixed bottom-6 right-6 p-3 bg-slate-800 hover:bg-saylo-primary text-slate-400 hover:text-white rounded-full shadow-lg border border-slate-700 transition-all z-50 group"
-        title="Reportar un error o sugerencia"
-      >
-        <Bug size={20} />
-      </button>
-    );
-  }
-
   return (
-    <div className="fixed bottom-6 right-6 w-80 bg-saylo-card border border-slate-700 rounded-2xl shadow-2xl z-50 overflow-hidden animate-in slide-in-from-bottom-5">
-      <div className="bg-slate-800 p-3 flex justify-between items-center border-b border-slate-700">
-        <h3 className="text-sm font-bold text-white flex items-center gap-2">
-          <Bug size={16} className="text-saylo-primary" /> Reportar
-        </h3>
-        <button onClick={() => setIsOpen(false)} className="text-slate-400 hover:text-white transition-colors">
-          <X size={16} />
-        </button>
-      </div>
+    <>
+      <button onClick={() => setIsOpen(true)}>
+        <Bug size={24} />
+      </button>
 
-      <div className="p-4">
-        {status === 'success' ? (
-          <div className="text-center py-6 text-green-400 text-sm font-medium animate-in fade-in">
-            ¡Gracias por ayudarnos a mejorar Saylo!
+      {isOpen && (
+        <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 font-sans text-left">
+          {/* Fondo oscuro difuminado */}
+          <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={() => setIsOpen(false)}></div>
+          
+          {/* Contenedor Vanilla Cream */}
+          <div className="relative bg-[#F2E3D0] w-full max-w-sm p-8 rounded-[2rem] shadow-2xl animate-in zoom-in-95 duration-200">
+            
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-2xl font-normal text-[#000000] tracking-tight">Reportar</h3>
+              <button 
+                onClick={() => setIsOpen(false)} 
+                className="bg-white/50 hover:bg-white text-[#000000] rounded-full p-2 transition-colors shadow-sm"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmit} className="flex flex-col gap-4">
+              <select 
+                value={type} 
+                // Corregimos el tipo de 'any' para complacer a ESLint
+                onChange={(e) => setType(e.target.value as 'bug' | 'feature' | 'other')}
+                className="w-full bg-white border-none p-4 rounded-2xl text-[#000000] text-sm font-medium focus:ring-2 focus:ring-[#B1C7DE] outline-none shadow-sm"
+              >
+                <option value="bug">Reportar un error (Bug)</option>
+                <option value="feature">Sugerir una mejora</option>
+                <option value="other">Otro Comentario</option>
+              </select>
+
+              <textarea 
+                value={text} 
+                onChange={(e) => setText(e.target.value)}
+                placeholder="¿Qué pasó? o ¿Qué te gustaría ver?"
+                rows={4}
+                required
+                className="w-full bg-white border-none p-4 rounded-2xl text-[#000000] text-sm font-medium placeholder:text-[#7C7D81]/60 focus:ring-2 focus:ring-[#B1C7DE] outline-none resize-none shadow-sm"
+              />
+
+              <button 
+                type="submit" 
+                disabled={sending || !text.trim()}
+                className="w-full bg-[#B1C7DE] hover:brightness-95 text-[#000000] font-medium py-4 rounded-full transition-all flex justify-center items-center gap-2 shadow-sm mt-2 disabled:opacity-50"
+              >
+                {sending ? 'Enviando...' : 'Enviar Reporte'}
+                {!sending && <Send size={16} />}
+              </button>
+            </form>
           </div>
-        ) : (
-          <form onSubmit={handleSubmit} className="flex flex-col gap-3">
-            <select 
-              value={type}
-              onChange={(e) => setType(e.target.value as 'bug' | 'feature' | 'other')}
-              className="w-full bg-black/30 border border-slate-700 rounded-lg text-sm text-white p-2 focus:outline-none focus:border-saylo-primary"
-            >
-              <option value="bug">Reportar un Error (Bug)</option>
-              <option value="feature">Sugerir una Mejora</option>
-              <option value="other">Otro</option>
-            </select>
-
-            <textarea 
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
-              placeholder="¿Qué pasó? o ¿Qué te gustaría ver?"
-              className="w-full bg-black/30 border border-slate-700 rounded-lg text-sm text-white p-3 min-h-[100px] resize-none focus:outline-none focus:border-saylo-primary"
-              required
-            />
-
-            <button 
-              type="submit"
-              disabled={status === 'loading' || !message.trim()}
-              className="w-full bg-saylo-primary hover:bg-indigo-500 text-white font-bold py-2 rounded-lg transition-colors flex justify-center items-center gap-2 disabled:opacity-50"
-            >
-              {status === 'loading' ? 'Enviando...' : <><Send size={16} /> Enviar</>}
-            </button>
-          </form>
-        )}
-      </div>
-    </div>
+        </div>
+      )}
+    </>
   );
 };

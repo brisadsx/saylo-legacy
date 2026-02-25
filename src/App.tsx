@@ -156,31 +156,44 @@ function App() {
 
   if (!currentRoomId) {
     return (
-      <div className="min-h-screen bg-saylo-bg p-4 relative font-sans">
-        <div className="absolute top-4 right-4 flex gap-3 z-10">
+      <>
+        {/* BOTONES SUPERIORES DERECHOS (Perfil y Salir) */}
+        <div className="fixed top-8 right-8 z-[60] flex items-center gap-4">
+          
+          {/* Botón de Perfil */}
           <button 
-            onClick={() => setShowProfile(!showProfile)} 
-            className="flex items-center gap-2 px-4 py-2 rounded-full bg-saylo-card hover:bg-saylo-primary text-white transition-colors text-sm font-medium border border-slate-700"
+            onClick={() => setShowProfile(true)}
+            className="w-12 h-12 rounded-full bg-saylo-cream text-saylo-black flex items-center justify-center hover:brightness-95 transition-all shadow-md"
           >
-            <UserIcon size={16} /> Mi Perfil
+            <UserIcon className="w-5 h-5" />
           </button>
-          <button onClick={logout} className="p-2 rounded-full bg-saylo-card hover:bg-red-900/50 text-white hover:text-red-400 transition-colors border border-slate-700">
-            <LogOut size={16} />
+
+          {/* Botón de Salir (AQUÍ USAMOS LOGOUT PARA ARREGLAR EL ERROR) */}
+          <button 
+            onClick={logout}
+            className="w-12 h-12 rounded-full bg-saylo-cream text-saylo-black flex items-center justify-center hover:brightness-95 transition-all shadow-md"
+          >
+            <LogOut className="w-5 h-5 translate-x-0.5" />
           </button>
         </div>
 
+        <div className="fixed bottom-8 right-8 z-[60] [&>button]:w-12 [&>button]:h-12 [&>button]:rounded-full [&>button]:bg-saylo-cream [&>button]:text-saylo-black [&>button]:flex [&>button]:items-center [&>button]:justify-center [&>button]:hover:brightness-95 [&>button]:transition-all [&>button]:shadow-lg [&>button]:border-none">
+           <FeedbackWidget userId={user.uid} />
+        </div>
+
+        {/* MODAL DE PERFIL */}
         {showProfile && (
-          <div className="absolute top-16 right-4 z-20 w-80">
-            <ProfileEditor userId={user.uid} onClose={() => setShowProfile(false)} />
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+             {/* Fondo oscuro sutil para destacar el modal */}
+             <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={() => setShowProfile(false)}></div>
+             {/* Tu componente de Perfil */}
+             <ProfileEditor userId={user.uid} onClose={() => setShowProfile(false)} />
           </div>
         )}
-
-        <div className="pt-20 flex justify-center">
-           <Lobby userId={user.uid} onJoinRoom={handleEnterRoom} />
-        </div>
-
-        <FeedbackWidget userId={user.uid} />
-      </div>
+        
+        {/* EL LOBBY */}
+        <Lobby userId={user.uid} onJoinRoom={handleEnterRoom} />
+      </>
     );
   }
 

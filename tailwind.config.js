@@ -8,17 +8,25 @@ export default {
     extend: {
       colors: {
         saylo: {
-          bg: '#0f172a',
-          card: '#1e293b',
-          text: '#f8fafc',
-          muted: '#94a3b8',
-          primary: '#6366f1',
-          secondary: '#10b981',
-          accent: '#f43f5e',
+          cream: '#F2E3D0',
+          blue: '#B1C7DE',
+          black: '#000000',
+          gray: '#7C7D81',
         }
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif'],
+        'sans': ['"NeueHaasThin"', 'sans-serif'], 
+      },
+      
+      keyframes: {
+        'fade-in-up': {
+          '0%': { opacity: '0', transform: 'translateY(10px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        }
+      },
+      animation: {
+        
+        'fade-in-up': 'fade-in-up 0.6s ease-out forwards', 
       }
     },
   },

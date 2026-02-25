@@ -3,14 +3,15 @@ export interface UserProfile {
   displayName: string;  
   photoURL?: string;   
   bio?: string;         
-  favoriteVerse?: string; 
+  favoriteVerse?: string;
+  username?: string; 
   
   currentReading?: {
     reference: string; 
     text: string;      
   };
 
-  // Metadatos
+  // metadatos útiles para la app, no necesariamente parte del perfil público
   createdAt: number;
   lastLogin: number;
 }

@@ -72,20 +72,20 @@ export const CommunityFeed = ({ userId }: Props) => {
           className="w-full bg-black/20 text-white p-4 rounded-xl resize-none focus:outline-none focus:ring-1 focus:ring-saylo-primary transition-all text-sm min-h-[80px]"
         />
         <div className="flex justify-between items-center mt-3">
-          <span className="text-xs text-slate-500 font-medium">Comparte con la comunidad</span>
+          <span className="text-xs text-slate-500 font-medium">Share with the community</span>
           <button 
             onClick={handlePublish} 
             disabled={!newPostText.trim()}
             className="bg-saylo-primary hover:bg-indigo-500 disabled:opacity-50 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all"
           >
-            <Send size={16} /> Publicar
+            <Send size={16} /> Post
           </button>
         </div>
       </div>
 
       {/* LISTA DE POSTS */}
       {loading ? (
-        <div className="text-center py-10 text-slate-500 animate-pulse">Cargando inspiración...</div>
+        <div className="text-center py-10 text-slate-500 animate-pulse">Loading...</div>
       ) : (
         <div className="space-y-4">
           {posts.map(post => {
@@ -138,7 +138,7 @@ export const CommunityFeed = ({ userId }: Props) => {
                   </button>
                   <button className="flex items-center gap-1.5 text-xs font-medium text-slate-500 cursor-default">
                     <MessageCircle size={16} />
-                    Comentar
+                    Comment
                   </button>
                 </div>
 
