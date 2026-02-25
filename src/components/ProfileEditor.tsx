@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { updateUserProfile, getUserProfile } from '../services/users';
 import { uploadProfileImage } from '../services/storage'; 
 import type { UserProfile } from '../types/User';
-import { X, Save, User, Camera, Loader2, BookOpen, Music, Heart, Palette } from 'lucide-react';
+import { X, Save, User, Camera, Loader2, BookOpen, Music, Heart } from 'lucide-react';
 
 interface Props {
   userId: string;
@@ -23,7 +23,7 @@ export const ProfileEditor = ({ userId, onClose }: Props) => {
   const [favReading, setFavReading] = useState('');
   const [favMusic, setFavMusic] = useState('');
   // Los contadores (En un futuro, los sacarás de la base de datos)
-  const [stats, setStats] = useState({ posts: 0, followers: 0, following: 0 });
+  const [stats] = useState({ posts: 0, followers: 0, following: 0 });
 
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false); 
