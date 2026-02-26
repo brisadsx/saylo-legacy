@@ -13,7 +13,9 @@ export interface UserProfile {
   username?: string; 
 
   posts: number;
-  followers: number;
+  followers?: number;
+  followingList?: string[];
+  followersList?: string[];
   streakDays: number;
   instagram?: string;
   twitter?: string;

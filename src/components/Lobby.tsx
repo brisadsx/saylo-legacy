@@ -8,9 +8,10 @@ import { Search, Plus, Lock, Users, ArrowRight, LogOut } from 'lucide-react';
 interface LobbyProps {
   userId: string;
   onJoinRoom: (id: string) => void;
+  onOpenProfile: (id: string) => void;
 }
 
-export const Lobby = ({ userId, onJoinRoom }: LobbyProps) => {
+export const Lobby = ({ userId, onJoinRoom, onOpenProfile }: LobbyProps) => { // <-- 2. Asegúrate de incluir onOpenProfile aquí
   // === cerebro ===
   const [activeTab, setActiveTab] = useState<'explore' | 'private' | 'community'>('explore');
   const [searchInput, setSearchInput] = useState('');
@@ -307,7 +308,7 @@ export const Lobby = ({ userId, onJoinRoom }: LobbyProps) => {
         {/* CONTENIDO: COMUNIDAD */}
         {activeTab === 'community' && (
           <div className="h-[250px] overflow-y-auto pr-2 custom-scrollbar animate-in fade-in duration-500">
-             <CommunityFeed userId={userId} />
+            <CommunityFeed userId={userId} onOpenProfile={onOpenProfile} />
           </div>
         )}
 

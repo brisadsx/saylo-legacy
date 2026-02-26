@@ -1,70 +1,60 @@
 import { useState, useEffect, useRef } from 'react';
 import { updateUserProfile, getUserProfile } from '../services/users';
 import { uploadProfileImage } from '../services/storage'; 
+import { db } from '../services/firebase';
+import { doc, updateDoc, arrayUnion, arrayRemove, collection, query, where, getDocs } from 'firebase/firestore';
 import type { UserProfile, FavoriteItem } from '../types/User'; 
-import { X, User, Camera, Loader2, Settings, Instagram, Twitter, Plus, Search, Film, Book } from 'lucide-react';
+import { X, User, Camera, Loader2, Settings, Instagram, Twitter, Plus, Search, Film, Book, Users } from 'lucide-react';
 
 interface Props {
-  userId: string;
+  currentUserId: string; // TÚ
+  targetUserId: string;  // EL PERFIL QUE ESTÁS VIENDO
   onClose: () => void;
+  onOpenProfile: (userId: string) => void; // Para navegar a otro perfil desde la búsqueda
 }
 
-interface TMDBMovie {
-  id: number;
-  title: string;
-  poster_path: string | null;
-}
-
-interface GoogleBook {
-  id: string;
-  volumeInfo: {
-    title: string;
-    imageLinks?: {
-      thumbnail?: string;
-    };
-  };
-}
+// ... (Interfaces de TMDB y GoogleBooks se mantienen igual) ...
+interface TMDBMovie { id: number; title: string; poster_path: string | null; }
+interface GoogleBook { id: string; volumeInfo: { title: string; imageLinks?: { thumbnail?: string; }; }; }
 
 const getStreakColor = (streak: number) => {
-  if (streak === 0) return '#F2E3D0'; 
-  
-  const colors = [
-    '#00E5FF', 
-    '#39FF14',
-    '#FFEA00', 
-    '#FF5E00', 
-    '#FF00FF', 
-    '#B026FF', 
-    '#FF3131', 
-  ];
-  // el ciclo se repite
+  if (streak === 0) return '#F2E3D0';
+  const colors = ['#00E5FF', '#39FF14', '#FFEA00', '#FF5E00', '#FF00FF', '#B026FF', '#FF3131'];
   return colors[(streak - 1) % colors.length];
 };
 
-export const ProfileEditor = ({ userId, onClose }: Props) => {
+export const ProfileEditor = ({ currentUserId, targetUserId, onClose, onOpenProfile }: Props) => {
+  // Saber si estoy viendo mi propio perfil
+  const isOwnProfile = currentUserId === targetUserId;
+
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [displayName, setDisplayName] = useState('');
   const [photoURL, setPhotoURL] = useState(''); 
   const [bio, setBio] = useState('');
   const [isEditing, setIsEditing] = useState(false);
 
-  // Redes Sociales
+  // Redes y Stats
   const [instagram, setInstagram] = useState('');
   const [twitter, setTwitter] = useState('');
-
-  // Stats Reales
   const [stats, setStats] = useState({ posts: 0, followers: 0 });
   const [totalSeconds, setTotalSeconds] = useState(0); 
-  
-  // Favoritos
   const [favorites, setFavorites] = useState<FavoriteItem[]>([]);
 
-  // Buscador de APIs
+  // Lógica de "Follow"
+  const [isFollowing, setIsFollowing] = useState(false);
+
+  // Buscador de Favoritos
   const [showFavSearch, setShowFavSearch] = useState(false);
   const [favSearchType, setFavSearchType] = useState<'movie' | 'book'>('movie');
   const [favQuery, setFavQuery] = useState('');
   const [favResults, setFavResults] = useState<FavoriteItem[]>([]);
   const [isSearchingFavs, setIsSearchingFavs] = useState(false);
+
+  // Buscador de Usuarios
+  const [showUserSearch, setShowUserSearch] = useState(false);
+  const [userQuery, setUserQuery] = useState('');
+  const [userResults, setUserResults] = useState<UserProfile[]>([]);
+  const [isSearchingUsers, setIsSearchingUsers] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false); 
@@ -73,9 +63,10 @@ export const ProfileEditor = ({ userId, onClose }: Props) => {
 
   useEffect(() => {
     const load = async () => {
-      if (!userId) return;
+      if (!targetUserId) return;
+      setInitialLoad(true);
       try {
-        const p = await getUserProfile(userId);
+        const p = await getUserProfile(targetUserId);
         if (p) {
           setProfile(p);
           setDisplayName(p.displayName || p.username || '');
@@ -84,7 +75,12 @@ export const ProfileEditor = ({ userId, onClose }: Props) => {
           setInstagram(p.instagram || '');
           setTwitter(p.twitter || '');
           setFavorites(p.favorites || []);
-          setStats({ posts: p.posts || 0, followers: p.followers || 0 });
+          
+          // Verificamos si TÚ estás en la lista de seguidores de ESTE perfil
+          const followersList = p.followersList || [];
+          setIsFollowing(followersList.includes(currentUserId));
+          
+          setStats({ posts: p.posts || 0, followers: followersList.length });
           setTotalSeconds(p.totalAppTime || 0);
         }
       } catch (error) {
@@ -94,25 +90,25 @@ export const ProfileEditor = ({ userId, onClose }: Props) => {
       }
     };
     load();
-  }, [userId]);
+  }, [targetUserId, currentUserId]);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!userId || !e.target.files?.[0]) return;
+    if (!isOwnProfile || !e.target.files?.[0]) return;
     const file = e.target.files[0];
     if (file.size > 2 * 1024 * 1024) return alert("Max file size is 2MB.");
     try {
       setUploading(true);
-      const url = await uploadProfileImage(file, userId);
+      const url = await uploadProfileImage(file, currentUserId);
       setPhotoURL(url); 
     } catch (error) { console.error(error); alert("Error uploading image"); } 
     finally { setUploading(false); }
   };
 
   const handleSave = async () => {
-    if (!userId) return;
+    if (!isOwnProfile) return;
     try {
       setLoading(true);
-      await updateUserProfile(userId, { 
+      await updateUserProfile(currentUserId, { 
           displayName, photoURL, bio, instagram, twitter, favorites 
       });
       setIsEditing(false);
@@ -120,6 +116,51 @@ export const ProfileEditor = ({ userId, onClose }: Props) => {
     finally { setLoading(false); }
   };
 
+  // LÓGICA PARA SEGUIR / DEJAR DE SEGUIR
+  const handleToggleFollow = async () => {
+      try {
+          const targetRef = doc(db, 'users', targetUserId);
+          const currentRef = doc(db, 'users', currentUserId);
+          
+          if (isFollowing) {
+              // Dejar de seguir
+              await updateDoc(targetRef, { followersList: arrayRemove(currentUserId) });
+              await updateDoc(currentRef, { followingList: arrayRemove(targetUserId) });
+              setStats(prev => ({ ...prev, followers: prev.followers - 1 }));
+              setIsFollowing(false);
+          } else {
+              // Seguir
+              await updateDoc(targetRef, { followersList: arrayUnion(currentUserId) });
+              await updateDoc(currentRef, { followingList: arrayUnion(targetUserId) });
+              setStats(prev => ({ ...prev, followers: prev.followers + 1 }));
+              setIsFollowing(true);
+          }
+      } catch (err) {
+          console.error("Error following user:", err);
+      }
+  };
+
+  // BUSCADOR DE USUARIOS EN FIREBASE
+  const searchUsers = async (e: React.FormEvent) => {
+      e.preventDefault();
+      if (!userQuery.trim()) return;
+      setIsSearchingUsers(true);
+      setUserResults([]);
+      try {
+          // Busca usuarios cuyo displayName o username coincida (Requiere índices en Firebase para algo más avanzado, esto es exacto)
+          const usersRef = collection(db, 'users');
+          const q = query(usersRef, where('displayName', '>=', userQuery), where('displayName', '<=', userQuery + '\uf8ff'));
+          const snapshot = await getDocs(q);
+          const results = snapshot.docs.map(doc => doc.data() as UserProfile).filter(u => u.uid !== currentUserId);
+          setUserResults(results);
+      } catch (err) {
+          console.error(err);
+      } finally {
+          setIsSearchingUsers(false);
+      }
+  };
+
+  // ... (Toda la lógica de searchFavorites, handleAddFavorite, handleRemoveFavorite se mantiene IGUAL) ...
   const searchFavorites = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!favQuery.trim()) return;
@@ -128,39 +169,29 @@ export const ProfileEditor = ({ userId, onClose }: Props) => {
     try {
       if (favSearchType === 'movie') {
         const TMDB_API_KEY = import.meta.env.VITE_TMDB_API_KEY; 
-        if (!TMDB_API_KEY || TMDB_API_KEY === "VITE_TMDB_API_KEY") {
-            alert("Missing TMDB API Key in .env file!");
-            setIsSearchingFavs(false); return;
-        }
+        if (!TMDB_API_KEY) return;
         const res = await fetch(`https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(favQuery)}&language=en-US`);
         const data = await res.json();
         const movies: FavoriteItem[] = (data.results || []).slice(0, 8).map((m: TMDBMovie) => ({
-          id: `tmdb-${m.id}`, type: 'movie', title: m.title,
-          coverUrl: m.poster_path ? `https://image.tmdb.org/t/p/w500${m.poster_path}` : 'https://placehold.co/100x150/111/F2E3D0?text=No+Cover'
+          id: `tmdb-${m.id}`, type: 'movie', title: m.title, coverUrl: m.poster_path ? `https://image.tmdb.org/t/p/w500${m.poster_path}` : 'https://placehold.co/100x150/111/F2E3D0?text=No+Cover'
         }));
         setFavResults(movies);
       } else {
         const res = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(favQuery)}&langRestrict=en&maxResults=8`);
         const data = await res.json();
         const books: FavoriteItem[] = (data.items || []).map((b: GoogleBook) => ({
-          id: `book-${b.id}`, type: 'book', title: b.volumeInfo.title,
-          coverUrl: b.volumeInfo.imageLinks?.thumbnail?.replace('http:', 'https:') || 'https://placehold.co/100x150/111/F2E3D0?text=No+Cover'
+          id: `book-${b.id}`, type: 'book', title: b.volumeInfo.title, coverUrl: b.volumeInfo.imageLinks?.thumbnail?.replace('http:', 'https:') || 'https://placehold.co/100x150/111/F2E3D0?text=No+Cover'
         }));
         setFavResults(books);
       }
-    } catch (error) {
-      console.error(error); alert("Error searching. Please try again.");
-    } finally { setIsSearchingFavs(false); }
+    } catch (error) { console.error(error); } finally { setIsSearchingFavs(false); }
   };
-
   const handleAddFavorite = (item: FavoriteItem) => {
-    if (favorites.some(f => f.id === item.id)) return alert("Already in your shelf!");
-    if (favorites.length >= 4) return alert("You can only have a maximum of 4 favorites.");
+    if (favorites.some(f => f.id === item.id) || favorites.length >= 4) return;
     setFavorites([...favorites, item]); setShowFavSearch(false); setFavQuery(''); 
   };
   const handleRemoveFavorite = (id: string) => setFavorites(favorites.filter(f => f.id !== id));
 
-  // CÁLCULO DEL STREAK Y EL COLOR
   const currentStreak = Math.floor(totalSeconds / 3600);
   const activeColor = getStreakColor(currentStreak);
 
@@ -175,9 +206,11 @@ export const ProfileEditor = ({ userId, onClose }: Props) => {
       <div className="relative bg-black w-full max-w-sm max-h-[85vh] flex flex-col rounded-3xl animate-in zoom-in-95 duration-300 text-center overflow-hidden text-[#F2E3D0] border border-white/10 shadow-lg">
         
         {/* HEADER */}
-        <button className="absolute top-3 left-3 text-[#F2E3D0]/60 hover:text-[#F2E3D0] p-1.5 transition-colors z-10">
-            <Settings size={18} />
-        </button>
+        {isOwnProfile && (
+            <button className="absolute top-3 left-3 text-[#F2E3D0]/60 hover:text-[#F2E3D0] p-1.5 transition-colors z-10">
+                <Settings size={18} />
+            </button>
+        )}
         <button onClick={onClose} className="absolute top-3 right-3 text-[#F2E3D0]/60 hover:text-[#F2E3D0] p-1.5 transition-colors z-10">
             <X size={18} />
         </button>
@@ -219,18 +252,16 @@ export const ProfileEditor = ({ userId, onClose }: Props) => {
                 </div>
             </div>
 
-            {/* 2. STATS COMPACTOS Y DINÁMICOS */}
+            {/* 2. STATS */}
             <div className="flex justify-center gap-4 w-full py-1.5 my-1.5">
                 <div className="flex flex-col items-center">
                     <span className="text-base font-black text-[#F2E3D0]">{stats.posts}</span>
                     <span className="text-[10px] text-[#F2E3D0]/60 font-bold tracking-wider">Posts</span>
                 </div>
                 <div className="flex flex-col items-center">
-                    <span className="text-base font-black text-[#F2E3D0]">{stats.followers.toLocaleString()}</span>
+                    <span className="text-base font-black text-[#F2E3D0]">{stats.followers}</span>
                     <span className="text-[10px] text-[#F2E3D0]/60 font-bold tracking-wider">Followers</span>
                 </div>
-                
-                {/* STREAK DINÁMICO SIN EMOJI */}
                 <div className="flex flex-col items-center relative transition-colors duration-500" style={{ color: activeColor }}>
                     <span className="text-base font-black flex items-center drop-shadow-[0_0_10px_rgba(currentcolor,0.5)]">
                         {currentStreak}
@@ -240,7 +271,7 @@ export const ProfileEditor = ({ userId, onClose }: Props) => {
             </div>
 
             {/* 3. REDES SOCIALES */}
-            <div className="flex flex-col items-center gap-2 mb-4 w-full max-w-xs mx-auto">
+            <div className="flex flex-col items-center gap-2 mb-2 w-full max-w-xs mx-auto">
                 {isEditing ? (
                     <div className="flex flex-col gap-2 w-full">
                         <div className="flex items-center gap-2 bg-[#F2E3D0]/10 rounded-xl px-3 py-1.5 border border-white/5">
@@ -256,20 +287,34 @@ export const ProfileEditor = ({ userId, onClose }: Props) => {
                     <div className="flex justify-center gap-3">
                         {instagram ? <a href={`https://instagram.com/${instagram.replace('@', '')}`} target="_blank" rel="noreferrer" className="text-[#F2E3D0] opacity-80 hover:opacity-100 transition-all hover:scale-110"><Instagram size={18} /></a> : null}
                         {twitter ? <a href={`https://twitter.com/${twitter.replace('@', '')}`} target="_blank" rel="noreferrer" className="text-[#F2E3D0] opacity-80 hover:opacity-100 transition-all hover:scale-110"><Twitter size={18} /></a> : null}
-                        {!instagram && !twitter && <span className="text-[10px] text-[#F2E3D0]/40 font-bold uppercase tracking-wider">No links yet</span>}
                     </div>
                 )}
             </div>
 
-            {/* 4. BOTONES DE ACCIÓN (Limpio) */}
-            <div className="flex flex-col items-center gap-2 mb-4">
-                {isEditing ? (
-                    <button onClick={handleSave} disabled={loading || uploading} className="bg-[#F2E3D0] text-black px-5 py-1.5 rounded-full font-bold text-xs uppercase tracking-widest hover:bg-[#F2E3D0]/90 transition-all disabled:opacity-50">
-                        {loading ? '...' : 'Save'}
-                    </button>
+            {/* 4. BOTONES DE ACCIÓN (Edit, Find Users o Follow) */}
+            <div className="flex justify-center gap-3 mb-4">
+                {isOwnProfile ? (
+                    <>
+                        {isEditing ? (
+                            <button onClick={handleSave} disabled={loading || uploading} className="bg-[#F2E3D0] text-black px-5 py-1.5 rounded-full font-bold text-xs uppercase tracking-widest hover:bg-[#F2E3D0]/90 transition-all disabled:opacity-50">
+                                {loading ? '...' : 'Save'}
+                            </button>
+                        ) : (
+                            <>
+                                <button onClick={() => setIsEditing(true)} className="bg-[#F2E3D0] text-black px-5 py-1.5 rounded-full font-bold text-xs uppercase tracking-widest hover:bg-[#F2E3D0]/90 transition-all">
+                                    Edit Profile
+                                </button>
+                                {/* BOTÓN DE BUSCAR USUARIOS */}
+                                <button onClick={() => setShowUserSearch(true)} className="bg-white/10 text-[#F2E3D0] px-4 py-1.5 rounded-full font-bold text-xs uppercase tracking-widest hover:bg-white/20 transition-all flex items-center gap-2">
+                                    <Search size={14} /> Find
+                                </button>
+                            </>
+                        )}
+                    </>
                 ) : (
-                    <button onClick={() => setIsEditing(true)} className="bg-[#F2E3D0] uppercase text-black px-5 py-1.5 rounded-full font-bold text-xs tracking-widest hover:bg-[#F2E3D0]/90 transition-all">
-                        Edit Profile
+                    /* BOTÓN DE SEGUIR (Si ves el perfil de otro) */
+                    <button onClick={handleToggleFollow} className={`${isFollowing ? 'bg-transparent border border-[#F2E3D0] text-[#F2E3D0]' : 'bg-[#F2E3D0] text-black'} px-6 py-1.5 rounded-full font-bold text-xs uppercase tracking-widest hover:scale-105 transition-all`}>
+                        {isFollowing ? 'Following' : 'Follow'}
                     </button>
                 )}
             </div>
@@ -279,10 +324,10 @@ export const ProfileEditor = ({ userId, onClose }: Props) => {
                 <h3 className="text-xs font-black text-[#F2E3D0] uppercase tracking-wider mb-2 px-1 opacity-90">Favorites</h3>
                 <div className="grid grid-cols-4 gap-2 w-full px-1">
                     {favorites.map(fav => (
-                        <div key={fav.id} className="relative group cursor-pointer aspect-[2/3] w-full">
-                            <img src={fav.coverUrl} alt={fav.title} className="w-full h-full object-cover rounded-lg shadow-sm group-hover:shadow-md transition-all border border-white/10" />
+                        <div key={fav.id} className="relative group aspect-[2/3] w-full">
+                            <img src={fav.coverUrl} alt={fav.title} className="w-full h-full object-cover rounded-lg shadow-sm border border-white/10" />
                             {isEditing && (
-                                <div onClick={() => handleRemoveFavorite(fav.id)} className="absolute inset-0 bg-red-900/80 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white">
+                                <div onClick={() => handleRemoveFavorite(fav.id)} className="absolute inset-0 bg-red-900/80 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white cursor-pointer">
                                     <X size={20} /><span className="text-[8px] font-bold mt-1 uppercase">Remove</span>
                                 </div>
                             )}
@@ -294,12 +339,61 @@ export const ProfileEditor = ({ userId, onClose }: Props) => {
                         </button>
                     )}
                 </div>
-                {!isEditing && favorites.length === 0 && <p className="text-xs text-[#F2E3D0]/40 italic px-1 mt-2">No favorites added.</p>}
             </div>
 
         </div>
       </div>
     </div>
+
+    {/* =========================================================
+        USER SEARCH MODAL (Nuevo!)
+        ========================================================= */}
+    {showUserSearch && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 font-sans text-[#F2E3D0]">
+            <div className="absolute inset-0 bg-black/95 backdrop-blur-md" onClick={() => setShowUserSearch(false)}></div>
+            <div className="relative bg-[#050505] border border-white/10 w-full max-w-sm rounded-3xl shadow-2xl overflow-hidden flex flex-col h-[60vh] animate-in zoom-in-95 duration-200">
+                <div className="p-4 border-b border-white/10 flex flex-col gap-3">
+                    <div className="flex justify-between items-center">
+                        <h3 className="text-lg font-black uppercase tracking-wider">Find Users</h3>
+                        <button onClick={() => setShowUserSearch(false)} className="text-white/50 hover:text-white p-1"><X size={18}/></button>
+                    </div>
+                    <form onSubmit={searchUsers} className="flex gap-2">
+                        <div className="flex-1 relative">
+                            <Search className="absolute left-3 top-2.5 text-white/40" size={16} />
+                            <input type="text" value={userQuery} onChange={(e) => setUserQuery(e.target.value)} placeholder="Search by name..." className="w-full bg-white/5 rounded-xl py-2 pl-9 pr-4 text-sm focus:outline-none focus:ring-1 focus:ring-[#F2E3D0]" autoFocus />
+                        </div>
+                        <button type="submit" disabled={isSearchingUsers || !userQuery.trim()} className="bg-[#F2E3D0] text-black px-3 rounded-xl font-bold text-xs disabled:opacity-50">Search</button>
+                    </form>
+                </div>
+                <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+                    {isSearchingUsers ? (
+                        <div className="flex justify-center mt-10"><Loader2 className="animate-spin text-[#F2E3D0]" size={24} /></div>
+                    ) : userResults.length > 0 ? (
+                        <div className="flex flex-col gap-3">
+                            {userResults.map(u => (
+                                <div key={u.uid} onClick={() => { setShowUserSearch(false); onOpenProfile(u.uid); }} className="flex items-center gap-3 p-3 bg-white/5 hover:bg-white/10 rounded-xl cursor-pointer transition-colors">
+                                    <div className="w-10 h-10 rounded-full overflow-hidden bg-black border border-white/10 shrink-0">
+                                        {u.photoURL ? <img src={u.photoURL} className="w-full h-full object-cover" /> : <User size={20} className="m-auto mt-2.5 text-white/30" />}
+                                    </div>
+                                    <div>
+                                        <p className="text-sm font-bold text-[#F2E3D0]">{u.displayName}</p>
+                                        <p className="text-[10px] text-[#F2E3D0]/50 uppercase tracking-wider">@{u.username || u.displayName?.replace(/\s+/g, '').toLowerCase()}</p>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    ) : userQuery && !isSearchingUsers ? (
+                        <p className="text-center text-white/40 mt-8 text-xs font-bold uppercase tracking-wider">No users found.</p>
+                    ) : (
+                        <div className="flex flex-col items-center justify-center h-full opacity-20 p-8">
+                            <Users size={40} className="mb-3" />
+                            <p className="text-xs font-bold uppercase tracking-wider text-center px-4 leading-relaxed">Search to connect with others.</p>
+                        </div>
+                    )}
+                </div>
+            </div>
+        </div>
+    )}
 
     {/* =========================================================
         FAVORITES SEARCH MODAL

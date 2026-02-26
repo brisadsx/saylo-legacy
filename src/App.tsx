@@ -35,7 +35,7 @@ function App() {
   const [participants, setParticipants] = useState<string[]>([]);
   const [currentReading, setCurrentReading] = useState<{ reference: string, text: string } | undefined>(undefined);
 
-  const [showProfile, setShowProfile] = useState(false);
+  const [viewingProfileId, setViewingProfileId] = useState<string | null>(null);
   const [inCall, setInCall] = useState(false); 
 
   useEffect(() => {
@@ -162,7 +162,7 @@ function App() {
           
           {/* Botón de Perfil */}
           <button 
-            onClick={() => setShowProfile(true)}
+            onClick={() => setViewingProfileId(user.uid)}
             className="w-12 h-12 rounded-full bg-saylo-cream text-saylo-black flex items-center justify-center hover:brightness-95 transition-all shadow-md"
           >
             <UserIcon className="w-5 h-5" />
@@ -182,17 +182,17 @@ function App() {
         </div>
 
         {/* MODAL DE PERFIL */}
-        {showProfile && (
-          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
-             {/* Fondo oscuro sutil para destacar el modal */}
-             <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={() => setShowProfile(false)}></div>
-             {/* Tu componente de Perfil */}
-             <ProfileEditor userId={user.uid} onClose={() => setShowProfile(false)} />
-          </div>
-        )}
+          {viewingProfileId && (
+                      <ProfileEditor 
+                        currentUserId={user.uid} 
+                        targetUserId={viewingProfileId} 
+                        onClose={() => setViewingProfileId(null)} 
+                        onOpenProfile={(id) => setViewingProfileId(id)} 
+                      />
+                  )}
         
         {/* EL LOBBY */}
-        <Lobby userId={user.uid} onJoinRoom={handleEnterRoom} />
+        <Lobby userId={user.uid} onJoinRoom={handleEnterRoom} onOpenProfile={(id) => setViewingProfileId(id)} />
       </>
     );
   }
