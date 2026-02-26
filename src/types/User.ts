@@ -1,3 +1,9 @@
+export interface FavoriteItem {
+  id: string; 
+  type: 'movie' | 'book';
+  title: string;
+  coverUrl: string;
+}
 export interface UserProfile {
   uid: string;          
   displayName: string;  
@@ -5,13 +11,20 @@ export interface UserProfile {
   bio?: string;         
   favoriteVerse?: string;
   username?: string; 
-  
+
+  posts: number;
+  followers: number;
+  streakDays: number;
+  instagram?: string;
+  twitter?: string;
+
   currentReading?: {
     reference: string; 
     text: string;      
   };
-
-  // metadatos útiles para la app, no necesariamente parte del perfil público
+  
+  totalAppTime?: number;
+  favorites?: FavoriteItem[];
   createdAt: number;
   lastLogin: number;
 }

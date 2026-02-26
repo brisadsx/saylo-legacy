@@ -1,55 +1,94 @@
 import { useState, useEffect, useRef } from 'react';
 import { updateUserProfile, getUserProfile } from '../services/users';
 import { uploadProfileImage } from '../services/storage'; 
-import type { UserProfile } from '../types/User';
-import { X, Save, User, Camera, Loader2, BookOpen, Music, Heart } from 'lucide-react';
+import type { UserProfile, FavoriteItem } from '../types/User'; 
+import { X, User, Camera, Loader2, Settings, Instagram, Twitter, Plus, Search, Film, Book } from 'lucide-react';
 
 interface Props {
   userId: string;
   onClose: () => void;
 }
 
-// Opciones de temas para el perfil
-type ProfileTheme = 'cream' | 'white' | 'black';
+interface TMDBMovie {
+  id: number;
+  title: string;
+  poster_path: string | null;
+}
+
+interface GoogleBook {
+  id: string;
+  volumeInfo: {
+    title: string;
+    imageLinks?: {
+      thumbnail?: string;
+    };
+  };
+}
+
+const getStreakColor = (streak: number) => {
+  if (streak === 0) return '#F2E3D0'; 
+  
+  const colors = [
+    '#00E5FF', 
+    '#39FF14',
+    '#FFEA00', 
+    '#FF5E00', 
+    '#FF00FF', 
+    '#B026FF', 
+    '#FF3131', 
+  ];
+  // el ciclo se repite
+  return colors[(streak - 1) % colors.length];
+};
 
 export const ProfileEditor = ({ userId, onClose }: Props) => {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [displayName, setDisplayName] = useState('');
   const [photoURL, setPhotoURL] = useState(''); 
   const [bio, setBio] = useState('');
+  const [isEditing, setIsEditing] = useState(false);
+
+  // Redes Sociales
+  const [instagram, setInstagram] = useState('');
+  const [twitter, setTwitter] = useState('');
+
+  // Stats Reales
+  const [stats, setStats] = useState({ posts: 0, followers: 0 });
+  const [totalSeconds, setTotalSeconds] = useState(0); 
   
-  // --- NUEVOS ESTADOS REALES ---
-  const [theme, setTheme] = useState<ProfileTheme>('cream');
-  const [favReading, setFavReading] = useState('');
-  const [favMusic, setFavMusic] = useState('');
-  // Los contadores (En un futuro, los sacarás de la base de datos)
-  const [stats] = useState({ posts: 0, followers: 0, following: 0 });
+  // Favoritos
+  const [favorites, setFavorites] = useState<FavoriteItem[]>([]);
+
+  // Buscador de APIs
+  const [showFavSearch, setShowFavSearch] = useState(false);
+  const [favSearchType, setFavSearchType] = useState<'movie' | 'book'>('movie');
+  const [favQuery, setFavQuery] = useState('');
+  const [favResults, setFavResults] = useState<FavoriteItem[]>([]);
+  const [isSearchingFavs, setIsSearchingFavs] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false); 
   const [initialLoad, setInitialLoad] = useState(true);
-  
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const load = async () => {
       if (!userId) return;
-
       try {
         const p = await getUserProfile(userId);
         if (p) {
           setProfile(p);
-          setDisplayName(p.displayName || '');
+          setDisplayName(p.displayName || p.username || '');
           setPhotoURL(p.photoURL || '');
           setBio(p.bio || '');
-          // Si ya tenía tema o favoritos guardados, los cargamos (esto requerirá actualizar tu UserProfile)
-          // setTheme(p.theme || 'cream');
-          // setFavReading(p.favReading || '');
-          // setFavMusic(p.favMusic || '');
-          // setStats({ posts: p.posts || 0, followers: p.followers || 0, following: p.following || 0 });
+          setInstagram(p.instagram || '');
+          setTwitter(p.twitter || '');
+          setFavorites(p.favorites || []);
+          setStats({ posts: p.posts || 0, followers: p.followers || 0 });
+          setTotalSeconds(p.totalAppTime || 0);
         }
       } catch (error) {
-        console.error("Error cargando el perfil:", error);
+        console.error("Error loading profile:", error);
       } finally {
         setInitialLoad(false);
       }
@@ -58,211 +97,277 @@ export const ProfileEditor = ({ userId, onClose }: Props) => {
   }, [userId]);
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!userId) return;
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    if (file.size > 2 * 1024 * 1024) {
-      alert("La imagen es muy pesada. Máximo 2MB.");
-      return;
-    }
-
+    if (!userId || !e.target.files?.[0]) return;
+    const file = e.target.files[0];
+    if (file.size > 2 * 1024 * 1024) return alert("Max file size is 2MB.");
     try {
       setUploading(true);
       const url = await uploadProfileImage(file, userId);
       setPhotoURL(url); 
-    } catch (error) {
-      console.error(error);
-      alert("Error subiendo la imagen");
-    } finally {
-      setUploading(false);
-    }
+    } catch (error) { console.error(error); alert("Error uploading image"); } 
+    finally { setUploading(false); }
   };
 
   const handleSave = async () => {
     if (!userId) return;
-
     try {
       setLoading(true);
       await updateUserProfile(userId, { 
-        displayName, 
-        photoURL, 
-        bio,
-        // Aquí guardarías el tema y los favoritos en un futuro
-        // theme,
-        // favReading,
-        // favMusic
+          displayName, photoURL, bio, instagram, twitter, favorites 
       });
-      onClose();
-      window.location.reload(); 
+      setIsEditing(false);
+    } catch (error) { console.error(error); alert("Error saving profile."); } 
+    finally { setLoading(false); }
+  };
+
+  const searchFavorites = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!favQuery.trim()) return;
+    setIsSearchingFavs(true);
+    setFavResults([]); 
+    try {
+      if (favSearchType === 'movie') {
+        const TMDB_API_KEY = import.meta.env.VITE_TMDB_API_KEY; 
+        if (!TMDB_API_KEY || TMDB_API_KEY === "VITE_TMDB_API_KEY") {
+            alert("Missing TMDB API Key in .env file!");
+            setIsSearchingFavs(false); return;
+        }
+        const res = await fetch(`https://api.themoviedb.org/3/search/movie?api_key=${TMDB_API_KEY}&query=${encodeURIComponent(favQuery)}&language=en-US`);
+        const data = await res.json();
+        const movies: FavoriteItem[] = (data.results || []).slice(0, 8).map((m: TMDBMovie) => ({
+          id: `tmdb-${m.id}`, type: 'movie', title: m.title,
+          coverUrl: m.poster_path ? `https://image.tmdb.org/t/p/w500${m.poster_path}` : 'https://placehold.co/100x150/111/F2E3D0?text=No+Cover'
+        }));
+        setFavResults(movies);
+      } else {
+        const res = await fetch(`https://www.googleapis.com/books/v1/volumes?q=${encodeURIComponent(favQuery)}&langRestrict=en&maxResults=8`);
+        const data = await res.json();
+        const books: FavoriteItem[] = (data.items || []).map((b: GoogleBook) => ({
+          id: `book-${b.id}`, type: 'book', title: b.volumeInfo.title,
+          coverUrl: b.volumeInfo.imageLinks?.thumbnail?.replace('http:', 'https:') || 'https://placehold.co/100x150/111/F2E3D0?text=No+Cover'
+        }));
+        setFavResults(books);
+      }
     } catch (error) {
-      console.error("Error guardando cambios:", error);
-      alert("Hubo un problema al guardar tu perfil.");
-    } finally {
-      setLoading(false);
-    }
+      console.error(error); alert("Error searching. Please try again.");
+    } finally { setIsSearchingFavs(false); }
   };
 
-  // Configuración de colores según el tema elegido
-  const themeColors = {
-    cream: { bg: 'bg-[#F2E3D0]', text: 'text-[#000000]', border: 'border-[#000000]', inputBg: 'bg-white', accent: 'bg-[#B1C7DE]' },
-    white: { bg: 'bg-white', text: 'text-[#000000]', border: 'border-[#000000]', inputBg: 'bg-[#F4F4F4]', accent: 'bg-[#F2E3D0]' },
-    black: { bg: 'bg-[#000000]', text: 'text-white', border: 'border-white/20', inputBg: 'bg-[#111111]', accent: 'bg-[#333333]' },
+  const handleAddFavorite = (item: FavoriteItem) => {
+    if (favorites.some(f => f.id === item.id)) return alert("Already in your shelf!");
+    if (favorites.length >= 4) return alert("You can only have a maximum of 4 favorites.");
+    setFavorites([...favorites, item]); setShowFavSearch(false); setFavQuery(''); 
   };
-  const currentTheme = themeColors[theme];
+  const handleRemoveFavorite = (id: string) => setFavorites(favorites.filter(f => f.id !== id));
 
-  if (initialLoad) {
-    return (
-      <div className={`relative ${currentTheme.bg} w-full max-w-md rounded-3xl border-2 ${currentTheme.border} p-12 flex justify-center items-center`}>
-        <Loader2 className={`animate-spin ${currentTheme.text}`} size={32} />
-      </div>
-    );
-  }
+  // CÁLCULO DEL STREAK Y EL COLOR
+  const currentStreak = Math.floor(totalSeconds / 3600);
+  const activeColor = getStreakColor(currentStreak);
+
+  if (initialLoad) return <div className="fixed inset-0 z-[100] flex items-center justify-center"><Loader2 className="animate-spin text-[#F2E3D0]" /></div>;
 
   return (
-    // CONTENEDOR PRINCIPAL: Altura máxima controlada (max-h-[90vh]) y scroll interno
-    <div className={`relative ${currentTheme.bg} w-full max-w-md max-h-[90vh] flex flex-col rounded-3xl border-2 ${currentTheme.border} overflow-hidden animate-in zoom-in-95 duration-300 font-sans text-left transition-colors`}>
-      
-      {/* HEADER: Botones de cerrar y selector de tema */}
-      <div className="flex justify-between items-center p-4 border-b-2 border-inherit">
-        <div className="flex items-center gap-3">
-           <h2 className={`text-xl font-bold ${currentTheme.text} tracking-tight ml-2`}>Mi Perfil</h2>
-           
-           {/* Mini selector de tema */}
-           <div className={`flex items-center gap-1 ${currentTheme.inputBg} rounded-full p-1 border border-inherit/30`}>
-              <button onClick={() => setTheme('cream')} className={`w-5 h-5 rounded-full bg-[#F2E3D0] ${theme === 'cream' ? 'ring-2 ring-offset-1 ring-black' : ''}`} title="Crema" />
-              <button onClick={() => setTheme('white')} className={`w-5 h-5 rounded-full bg-white border border-gray-300 ${theme === 'white' ? 'ring-2 ring-offset-1 ring-black' : ''}`} title="Blanco" />
-              <button onClick={() => setTheme('black')} className={`w-5 h-5 rounded-full bg-black ${theme === 'black' ? 'ring-2 ring-offset-1 ring-gray-400' : ''}`} title="Negro" />
-           </div>
-        </div>
+    <>
+    <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 overflow-hidden font-sans">
+      <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={onClose}></div>
 
-        <button onClick={onClose} className={`${currentTheme.inputBg} ${currentTheme.text} border-2 ${currentTheme.border} rounded-full p-1 hover:brightness-95 transition-all`}>
-          <X size={20} />
-        </button>
-      </div>
-
-      {/* ÁREA SCROLLEABLE: Si el contenido es muy largo, solo esta parte hará scroll */}
-      <div className="overflow-y-auto p-6 flex flex-col gap-6 custom-scrollbar">
+      {/* PROFILE CARD */}
+      <div className="relative bg-black w-full max-w-sm max-h-[85vh] flex flex-col rounded-3xl animate-in zoom-in-95 duration-300 text-center overflow-hidden text-[#F2E3D0] border border-white/10 shadow-lg">
         
-        {/* SECCIÓN 1: Avatar y Nombre */}
-        <div className={`flex flex-col sm:flex-row items-center sm:items-start gap-4 ${currentTheme.inputBg} p-4 rounded-2xl border-2 ${currentTheme.border}`}>
-          
-          <div 
-            className={`relative group cursor-pointer w-24 h-24 ${currentTheme.bg} border-2 ${currentTheme.border} rounded-2xl flex items-center justify-center overflow-hidden shrink-0`}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            {uploading ? (
-               <Loader2 className={`animate-spin ${currentTheme.text}`} size={24} />
-            ) : photoURL ? (
-              <img src={photoURL} alt="Perfil" className="w-full h-full object-cover" />
-            ) : (
-              <User size={40} className={`${currentTheme.text} opacity-50`} />
-            )}
+        {/* HEADER */}
+        <button className="absolute top-3 left-3 text-[#F2E3D0]/60 hover:text-[#F2E3D0] p-1.5 transition-colors z-10">
+            <Settings size={18} />
+        </button>
+        <button onClick={onClose} className="absolute top-3 right-3 text-[#F2E3D0]/60 hover:text-[#F2E3D0] p-1.5 transition-colors z-10">
+            <X size={18} />
+        </button>
+
+        {/* ÁREA SCROLLEABLE */}
+        <div className="overflow-y-auto p-5 pt-9 custom-scrollbar flex-1 flex flex-col gap-3">
             
-            <div className="absolute inset-0 bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-              <Camera className="text-white" size={24} />
-            </div>
-            
-            <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileChange} />
-          </div>
+            {/* 1. IDENTIDAD */}
+            <div className="flex flex-col items-center gap-2 mb-2">
+                <div 
+                className={`relative group w-20 h-20 rounded-full overflow-hidden shrink-0 ${isEditing ? 'cursor-pointer' : ''}`}
+                onClick={() => isEditing && fileInputRef.current?.click()}
+                >
+                {uploading ? <Loader2 className="animate-spin m-auto mt-7 text-[#F2E3D0]" /> : 
+                photoURL ? <img src={photoURL} alt="Profile" className="w-full h-full object-cover" /> : 
+                <User size={40} className="m-auto mt-5 text-[#F2E3D0]/30" />}
+                {isEditing && (
+                    <div className="absolute inset-0 bg-black/60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Camera className="text-[#F2E3D0]" size={20} />
+                    </div>
+                )}
+                <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileChange} disabled={!isEditing} />
+                </div>
 
-          <div className="flex-1 w-full mt-2 sm:mt-0">
-             <input 
-                type="text" 
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-                placeholder="Tu Nombre"
-                className={`w-full bg-transparent border-b-2 border-inherit/30 focus:border-inherit text-2xl font-bold ${currentTheme.text} placeholder:opacity-40 outline-none pb-1 mb-1 truncate text-center sm:text-left`}
-              />
-            <p className={`${currentTheme.text} opacity-70 text-xs font-bold uppercase tracking-wider truncate text-center sm:text-left`}>
-               @{profile?.displayName?.replace(/\s+/g, '').toLowerCase() || 'usuario'}
-            </p>
-          </div>
-        </div>
+                <div className="flex flex-col items-center w-full">
+                {isEditing ? (
+                    <input type="text" value={displayName} onChange={(e) => setDisplayName(e.target.value)} className="text-lg font-black text-[#F2E3D0] bg-transparent border-b border-[#F2E3D0]/20 text-center focus:outline-none pb-0.5 w-full max-w-[180px]" autoFocus placeholder="Your @username" />
+                ) : (
+                    <h2 className="text-xl font-black text-[#F2E3D0] tracking-tight">{displayName || profile?.username || 'User'}</h2>
+                )}
+                </div>
 
-        {/* SECCIÓN 2: Estadísticas Reales (Conectadas al estado) */}
-        <div className="grid grid-cols-3 gap-3">
-          {[
-            { label: 'Posts', value: stats.posts },
-            { label: 'Followers', value: stats.followers },
-            { label: 'Following', value: stats.following }
-          ].map((stat) => (
-            <div key={stat.label} className={`${currentTheme.inputBg} border-2 ${currentTheme.border} rounded-xl p-3 text-center`}>
-              <span className={`block text-xl font-black ${currentTheme.text}`}>{stat.value}</span>
-              <span className={`text-[10px] font-bold ${currentTheme.text} opacity-60 uppercase tracking-wider`}>{stat.label}</span>
-            </div>
-          ))}
-        </div>
-
-        {/* SECCIÓN 3: Top Favorites (Editables) */}
-        <div className={`${currentTheme.inputBg} border-2 ${currentTheme.border} rounded-2xl p-4`}>
-          <div className={`flex items-center gap-2 mb-4 pb-2 border-b-2 border-inherit/10`}>
-            <Heart className={`${currentTheme.text}`} w-5 h-5 fill="currentColor" />
-            <h3 className={`text-sm font-bold ${currentTheme.text} uppercase tracking-wide`}>Top Favorites</h3>
-          </div>
-          
-          <div className="flex flex-col gap-4">
-            {/* Input Libro/Lectura */}
-            <div className="flex items-start gap-3">
-              <div className={`${currentTheme.accent} border-2 ${currentTheme.border} p-2 rounded-lg ${currentTheme.text} shrink-0`}>
-                <BookOpen size={16} />
-              </div>
-              <div className="flex-1 w-full">
-                 <p className={`text-[10px] font-bold ${currentTheme.text} opacity-60 uppercase mb-1`}>Reading</p>
-                 <input 
-                    type="text"
-                    value={favReading}
-                    onChange={(e) => setFavReading(e.target.value)}
-                    placeholder="Ej: Salmos & Proverbs..."
-                    className={`w-full bg-transparent border-b border-inherit/30 focus:border-inherit text-sm font-bold ${currentTheme.text} placeholder:opacity-30 outline-none pb-1`}
-                 />
-              </div>
+                <div className="w-full max-w-xs px-1 min-h-[1.5rem]">
+                    {isEditing ? (
+                    <textarea value={bio} onChange={(e) => setBio(e.target.value)} placeholder="Your bio..." rows={1} className="w-full bg-[#F2E3D0]/10 rounded-xl p-2 text-xs font-medium text-center focus:outline-none resize-none text-[#F2E3D0] placeholder:text-[#F2E3D0]/40" />
+                    ) : (
+                    <p className="text-sm font-medium text-[#F2E3D0]/80 leading-snug">{bio || 'No bio yet.'}</p>
+                    )}
+                </div>
             </div>
 
-            {/* Input Música/Vibe */}
-            <div className="flex items-start gap-3">
-              <div className={`${currentTheme.accent} border-2 ${currentTheme.border} p-2 rounded-lg ${currentTheme.text} shrink-0`}>
-                <Music size={16} />
-              </div>
-              <div className="flex-1 w-full">
-                 <p className={`text-[10px] font-bold ${currentTheme.text} opacity-60 uppercase mb-1`}>Vibe / Music</p>
-                 <input 
-                    type="text"
-                    value={favMusic}
-                    onChange={(e) => setFavMusic(e.target.value)}
-                    placeholder="Ej: Lo-Fi Worship Beats..."
-                    className={`w-full bg-transparent border-b border-inherit/30 focus:border-inherit text-sm font-bold ${currentTheme.text} placeholder:opacity-30 outline-none pb-1`}
-                 />
-              </div>
+            {/* 2. STATS COMPACTOS Y DINÁMICOS */}
+            <div className="flex justify-center gap-4 w-full py-1.5 my-1.5">
+                <div className="flex flex-col items-center">
+                    <span className="text-base font-black text-[#F2E3D0]">{stats.posts}</span>
+                    <span className="text-[10px] text-[#F2E3D0]/60 font-bold tracking-wider">Posts</span>
+                </div>
+                <div className="flex flex-col items-center">
+                    <span className="text-base font-black text-[#F2E3D0]">{stats.followers.toLocaleString()}</span>
+                    <span className="text-[10px] text-[#F2E3D0]/60 font-bold tracking-wider">Followers</span>
+                </div>
+                
+                {/* STREAK DINÁMICO SIN EMOJI */}
+                <div className="flex flex-col items-center relative transition-colors duration-500" style={{ color: activeColor }}>
+                    <span className="text-base font-black flex items-center drop-shadow-[0_0_10px_rgba(currentcolor,0.5)]">
+                        {currentStreak}
+                    </span>
+                    <span className="text-[10px] font-bold tracking-wider opacity-80">Streak</span>
+                </div>
             </div>
-          </div>
-        </div>
 
-        {/* SECCIÓN 4: Bio */}
-        <div className="flex flex-col gap-1.5">
-          <label className={`text-xs font-bold ${currentTheme.text} ml-1 uppercase tracking-wide`}>Bio / About me</label>
-          <textarea 
-            value={bio}
-            onChange={(e) => setBio(e.target.value)}
-            placeholder="Escribe algo sobre ti..."
-            rows={3}
-            className={`w-full ${currentTheme.inputBg} border-2 ${currentTheme.border} rounded-2xl p-3 ${currentTheme.text} placeholder:opacity-40 focus:outline-none focus:ring-2 focus:ring-inherit/20 font-medium resize-none text-sm`}
-          />
-        </div>
+            {/* 3. REDES SOCIALES */}
+            <div className="flex flex-col items-center gap-2 mb-4 w-full max-w-xs mx-auto">
+                {isEditing ? (
+                    <div className="flex flex-col gap-2 w-full">
+                        <div className="flex items-center gap-2 bg-[#F2E3D0]/10 rounded-xl px-3 py-1.5 border border-white/5">
+                            <Instagram size={14} className="text-[#F2E3D0]/60 shrink-0" />
+                            <input type="text" value={instagram} onChange={(e) => setInstagram(e.target.value)} placeholder="Your Instagram @" className="bg-transparent border-none text-xs text-[#F2E3D0] focus:outline-none w-full placeholder:text-[#F2E3D0]/40" />
+                        </div>
+                        <div className="flex items-center gap-2 bg-[#F2E3D0]/10 rounded-xl px-3 py-1.5 border border-white/5">
+                            <Twitter size={14} className="text-[#F2E3D0]/60 shrink-0" />
+                            <input type="text" value={twitter} onChange={(e) => setTwitter(e.target.value)} placeholder="Your Twitter/X @" className="bg-transparent border-none text-xs text-[#F2E3D0] focus:outline-none w-full placeholder:text-[#F2E3D0]/40" />
+                        </div>
+                    </div>
+                ) : (
+                    <div className="flex justify-center gap-3">
+                        {instagram ? <a href={`https://instagram.com/${instagram.replace('@', '')}`} target="_blank" rel="noreferrer" className="text-[#F2E3D0] opacity-80 hover:opacity-100 transition-all hover:scale-110"><Instagram size={18} /></a> : null}
+                        {twitter ? <a href={`https://twitter.com/${twitter.replace('@', '')}`} target="_blank" rel="noreferrer" className="text-[#F2E3D0] opacity-80 hover:opacity-100 transition-all hover:scale-110"><Twitter size={18} /></a> : null}
+                        {!instagram && !twitter && <span className="text-[10px] text-[#F2E3D0]/40 font-bold uppercase tracking-wider">No links yet</span>}
+                    </div>
+                )}
+            </div>
 
+            {/* 4. BOTONES DE ACCIÓN (Limpio) */}
+            <div className="flex flex-col items-center gap-2 mb-4">
+                {isEditing ? (
+                    <button onClick={handleSave} disabled={loading || uploading} className="bg-[#F2E3D0] text-black px-5 py-1.5 rounded-full font-bold text-xs uppercase tracking-widest hover:bg-[#F2E3D0]/90 transition-all disabled:opacity-50">
+                        {loading ? '...' : 'Save'}
+                    </button>
+                ) : (
+                    <button onClick={() => setIsEditing(true)} className="bg-[#F2E3D0] uppercase text-black px-5 py-1.5 rounded-full font-bold text-xs tracking-widest hover:bg-[#F2E3D0]/90 transition-all">
+                        Edit Profile
+                    </button>
+                )}
+            </div>
+
+            {/* 5. SECCIÓN FAVORITES */}
+            <div className="w-full text-left">
+                <h3 className="text-xs font-black text-[#F2E3D0] uppercase tracking-wider mb-2 px-1 opacity-90">Favorites</h3>
+                <div className="grid grid-cols-4 gap-2 w-full px-1">
+                    {favorites.map(fav => (
+                        <div key={fav.id} className="relative group cursor-pointer aspect-[2/3] w-full">
+                            <img src={fav.coverUrl} alt={fav.title} className="w-full h-full object-cover rounded-lg shadow-sm group-hover:shadow-md transition-all border border-white/10" />
+                            {isEditing && (
+                                <div onClick={() => handleRemoveFavorite(fav.id)} className="absolute inset-0 bg-red-900/80 rounded-lg opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white">
+                                    <X size={20} /><span className="text-[8px] font-bold mt-1 uppercase">Remove</span>
+                                </div>
+                            )}
+                        </div>
+                    ))}
+                    {isEditing && favorites.length < 4 && (
+                        <button onClick={() => setShowFavSearch(true)} className="relative flex flex-col items-center justify-center aspect-[2/3] w-full bg-[#F2E3D0]/5 rounded-lg text-[#F2E3D0]/40 transition-all border border-dashed border-[#F2E3D0]/20 group hover:bg-[#F2E3D0]/10 hover:text-[#F2E3D0] cursor-pointer">
+                            <Plus size={20} className="group-hover:scale-110 transition-transform" />
+                        </button>
+                    )}
+                </div>
+                {!isEditing && favorites.length === 0 && <p className="text-xs text-[#F2E3D0]/40 italic px-1 mt-2">No favorites added.</p>}
+            </div>
+
+        </div>
       </div>
-
-      {/* FOOTER FIJO: Botón Guardar */}
-      <div className={`p-4 border-t-2 border-inherit ${currentTheme.bg}`}>
-         <button 
-           onClick={handleSave}
-           disabled={loading || uploading}
-           className={`w-full ${theme === 'black' ? 'bg-white text-black hover:bg-gray-200' : 'bg-[#000000] text-[#F2E3D0] hover:bg-gray-800'} py-4 rounded-2xl font-bold text-lg transition-all flex items-center justify-center gap-2 disabled:opacity-50`}
-         >
-           {loading ? 'Guardando...' : 'Guardar Cambios'} {!loading && <Save size={20} />}
-         </button>
-      </div>
-
     </div>
+
+    {/* =========================================================
+        FAVORITES SEARCH MODAL
+        ========================================================= */}
+    {showFavSearch && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 font-sans text-[#F2E3D0]">
+            <div className="absolute inset-0 bg-black/95 backdrop-blur-md" onClick={() => setShowFavSearch(false)}></div>
+            
+            <div className="relative bg-[#050505] border border-white/10 w-full max-w-lg rounded-3xl shadow-2xl overflow-hidden flex flex-col h-[75vh] animate-in slide-in-from-bottom-10 duration-300">
+                
+                {/* Search Header */}
+                <div className="p-4 border-b border-white/10 flex flex-col gap-3">
+                    <div className="flex justify-between items-center">
+                        <h3 className="text-xl font-black">Add to Shelf</h3>
+                        <button onClick={() => setShowFavSearch(false)} className="text-white/50 hover:text-white p-1"><X size={18}/></button>
+                    </div>
+
+                    {/* Movie or Book Toggle */}
+                    <div className="flex bg-black rounded-lg p-0.5 border border-white/5">
+                        <button onClick={() => { setFavSearchType('movie'); setFavResults([]); setFavQuery(''); }} className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-sm font-bold transition-colors ${favSearchType === 'movie' ? 'bg-[#F2E3D0] text-black' : 'text-white/50 hover:text-white'}`}>
+                            <Film size={14}/> Movie
+                        </button>
+                        <button onClick={() => { setFavSearchType('book'); setFavResults([]); setFavQuery(''); }} className={`flex-1 flex items-center justify-center gap-1.5 py-1.5 rounded-md text-sm font-bold transition-colors ${favSearchType === 'book' ? 'bg-[#F2E3D0] text-black' : 'text-white/50 hover:text-white'}`}>
+                            <Book size={14}/> Book
+                        </button>
+                    </div>
+
+                    {/* Search Bar */}
+                    <form onSubmit={searchFavorites} className="flex gap-2">
+                        <div className="flex-1 relative">
+                            <Search className="absolute left-3.5 top-3.5 text-white/40" size={16} />
+                            <input type="text" value={favQuery} onChange={(e) => setFavQuery(e.target.value)} placeholder={`Search ${favSearchType === 'movie' ? 'e.g., Dune' : 'e.g., Bible'}...`} className="w-full bg-black rounded-xl py-3 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-[#F2E3D0] border border-white/5 placeholder:text-[#F2E3D0]/30" autoFocus />
+                        </div>
+                        <button type="submit" disabled={isSearchingFavs || !favQuery.trim()} className="bg-[#F2E3D0] text-black px-4 rounded-xl font-bold disabled:opacity-50 text-sm">Search</button>
+                    </form>
+                </div>
+
+                {/* Results Area */}
+                <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
+                    {isSearchingFavs ? (
+                        <div className="flex flex-col items-center justify-center h-full opacity-50"><Loader2 className="animate-spin mb-2" size={24} /><p className="text-xs font-bold uppercase">Searching...</p></div>
+                    ) : favResults.length > 0 ? (
+                        <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
+                            {favResults.map(res => (
+                                <div key={res.id} onClick={() => handleAddFavorite(res)} className="group cursor-pointer flex flex-col">
+                                    <div className="relative aspect-[2/3] w-full rounded-lg overflow-hidden shadow-lg border-2 border-transparent group-hover:border-[#F2E3D0] transition-colors">
+                                        <img src={res.coverUrl} alt={res.title} className="w-full h-full object-cover border border-white/10" />
+                                        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center">
+                                            <Plus className="text-[#F2E3D0]" size={28} /><span className="text-[9px] font-bold text-[#F2E3D0] uppercase mt-1">Add</span>
+                                        </div>
+                                    </div>
+                                    <p className="text-[9px] font-bold mt-1.5 truncate text-center opacity-80 group-hover:opacity-100">{res.title}</p>
+                                </div>
+                            ))}
+                        </div>
+                    ) : favQuery && !isSearchingFavs ? (
+                        <p className="text-center text-white/40 mt-8 text-xs font-bold uppercase tracking-wider">No results found.</p>
+                    ) : (
+                        <div className="flex flex-col items-center justify-center h-full opacity-20 p-8">
+                            {favSearchType === 'movie' ? <Film size={40} className="mb-3" /> : <Book size={40} className="mb-3" />}
+                            <p className="text-xs font-bold uppercase tracking-wider text-center px-4 leading-relaxed">Search to add favorites to your shelf.</p>
+                        </div>
+                    )}
+                </div>
+
+            </div>
+        </div>
+    )}
+    </>
   );
 };
