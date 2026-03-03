@@ -21,9 +21,19 @@ import { FeedbackWidget } from './components/FeedbackWidget';
 
 // hooks y utilidades
 import { usePomodoro } from './hooks/usePomodoro';
-import { Video as VideoIcon, LogOut, User as UserIcon, Lock, Globe, Clock, Pause, Play, RotateCcw, Loader2 } from 'lucide-react';
+import { Video as VideoIcon, LogOut, User as UserIcon, Lock, Globe, Clock, Pause, Play, RotateCcw, Loader2, Users } from 'lucide-react';
 
 const agoraClient = AgoraRTC.createClient({ mode: "rtc", codec: "vp8" });
+
+// ==========================================
+// TUS FONDOS DE PANTALLA ROTATIVOS
+// Puedes reemplazar estos links por los de tus propias fotos
+// ==========================================
+const BACKGROUND_IMAGES = [
+  'https://images.unsplash.com/photo-1507525428034-b723cf961d3e?q=80&w=2073&auto=format&fit=crop', // Playa / Relax
+  'https://images.unsplash.com/photo-1444464666168-49b626f8a1b1?q=80&w=2069&auto=format&fit=crop', // Bosque / Lofi
+  'https://images.unsplash.com/photo-1519681393784-d120267933ba?q=80&w=2070&auto=format&fit=crop', // Montañas / Noche
+];
 
 function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -38,6 +48,18 @@ function App() {
   const [viewingProfileId, setViewingProfileId] = useState<string | null>(null);
   const [inCall, setInCall] = useState(false); 
 
+  // Estados para el fondo y menú de participantes
+  const [bgIndex, setBgIndex] = useState(0);
+  const [showParticipants, setShowParticipants] = useState(false);
+
+  // Rotador de Fondos (Cambia cada 60 segundos)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setBgIndex((prev) => (prev + 1) % BACKGROUND_IMAGES.length);
+    }, 60000); // 60000 ms = 1 minuto
+    return () => clearInterval(interval);
+  }, []);
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
@@ -48,7 +70,6 @@ function App() {
 
   useEffect(() => {
     if (!user) return;
-
     const syncRoomFromUrl = () => {
       const params = new URLSearchParams(window.location.search);
       const roomIdFromUrl = params.get('room');
@@ -58,7 +79,6 @@ function App() {
         setCurrentRoomId(null);
       }
     };
-
     syncRoomFromUrl();
     window.addEventListener('popstate', syncRoomFromUrl);
     return () => window.removeEventListener('popstate', syncRoomFromUrl);
@@ -89,16 +109,14 @@ function App() {
 
   useEffect(() => {
     if (!currentRoomId || !user) return;
-
     const unsubscribe = subscribeToRoom(currentRoomId, (roomData) => {
       if (!roomData) {
-        if (!isHost) alert("El anfitrión ha finalizado esta sesión.");
+        if (!isHost) alert("The host has ended this session.");
         setInCall(false);
         setCurrentRoomId(null);
         window.history.pushState({ path: window.location.pathname }, '', window.location.pathname);
         return;
       }
-
       const amIHost = roomData.hostId === user.uid;
       setIsHost(amIHost);
       setIsRoomPrivate(roomData.isPrivate || false);
@@ -111,7 +129,6 @@ function App() {
         setMode(roomData.timer.mode);
       }
     });
-
     return () => unsubscribe();
   }, [currentRoomId, user, setTimeLeft, setIsRunning, setMode, isHost]); 
 
@@ -131,7 +148,7 @@ function App() {
 
   const handleExitRoom = async () => {
     if (isHost && currentRoomId) {
-      const confirmClose = window.confirm("Eres el anfitrión. ¿Deseas cerrar y eliminar la sala para todos?");
+      const confirmClose = window.confirm("You are the host. Do you want to close and delete this room for everyone?");
       if (confirmClose) {
         await endRoom(currentRoomId);
       }
@@ -147,181 +164,189 @@ function App() {
   };
 
   if (loading) return (
-    <div className="min-h-screen flex items-center justify-center bg-saylo-bg text-saylo-muted">
-      <Loader2 className="animate-spin text-saylo-primary" size={48} />
+    <div className="min-h-screen flex items-center justify-center bg-black text-[#F2E3D0]">
+      <Loader2 className="animate-spin" size={48} />
     </div>
   );
 
   if (!user) return <Login />;
 
+  // ==========================================
+  // VISTA 1: LOBBY
+  // ==========================================
   if (!currentRoomId) {
     return (
-      <>
-        {/* BOTONES SUPERIORES DERECHOS (Perfil y Salir) */}
-        <div className="fixed top-8 right-8 z-[60] flex items-center gap-4">
-          
-          {/* Botón de Perfil */}
-          <button 
-            onClick={() => setViewingProfileId(user.uid)}
-            className="w-12 h-12 rounded-full bg-saylo-cream text-saylo-black flex items-center justify-center hover:brightness-95 transition-all shadow-md"
-          >
-            <UserIcon className="w-5 h-5" />
-          </button>
+      <div 
+        className="min-h-screen bg-cover bg-center transition-all duration-1000 ease-in-out relative"
+        style={{ backgroundImage: `url(${BACKGROUND_IMAGES[bgIndex]})` }}
+      >
+        {/* Overlay oscuro para que se lea la UI */}
+        <div className="absolute inset-0 bg-black/60 backdrop-blur-sm"></div>
 
-          {/* Botón de Salir (AQUÍ USAMOS LOGOUT PARA ARREGLAR EL ERROR) */}
-          <button 
-            onClick={logout}
-            className="w-12 h-12 rounded-full bg-saylo-cream text-saylo-black flex items-center justify-center hover:brightness-95 transition-all shadow-md"
-          >
-            <LogOut className="w-5 h-5 translate-x-0.5" />
-          </button>
+        <div className="relative z-10">
+            <div className="fixed top-8 right-8 z-[60] flex items-center gap-4">
+              <button onClick={() => setViewingProfileId(user.uid)} className="w-12 h-12 rounded-full bg-white/10 backdrop-blur-md border border-white/20 text-[#F2E3D0] flex items-center justify-center hover:bg-white/20 transition-all shadow-md">
+                <UserIcon className="w-5 h-5" />
+              </button>
+              <button onClick={logout} className="w-12 h-12 rounded-full bg-red-500/20 backdrop-blur-md border border-red-500/30 text-red-400 flex items-center justify-center hover:bg-red-500/30 transition-all shadow-sm">
+                <LogOut className="w-5 h-5 translate-x-0.5" />
+              </button>
+            </div>
+
+            <div className="fixed bottom-8 right-8 z-[60] [&>button]:w-12 [&>button]:h-12 [&>button]:rounded-full [&>button]:bg-white/10 [&>button]:backdrop-blur-md [&>button]:border [&>button]:border-white/20 [&>button]:text-[#F2E3D0] [&>button]:flex [&>button]:items-center [&>button]:justify-center [&>button]:hover:bg-white/20 [&>button]:transition-all [&>button]:shadow-sm">
+              <FeedbackWidget userId={user.uid} />
+            </div>
+
+            {viewingProfileId && (
+                <ProfileEditor currentUserId={user.uid} targetUserId={viewingProfileId} onClose={() => setViewingProfileId(null)} onOpenProfile={(id: string) => setViewingProfileId(id)} />
+            )}
+            
+            <Lobby userId={user.uid} onJoinRoom={handleEnterRoom} onOpenProfile={(id: string) => setViewingProfileId(id)} />
         </div>
-
-        <div className="fixed bottom-8 right-8 z-[60] [&>button]:w-12 [&>button]:h-12 [&>button]:rounded-full [&>button]:bg-saylo-cream [&>button]:text-saylo-black [&>button]:flex [&>button]:items-center [&>button]:justify-center [&>button]:hover:brightness-95 [&>button]:transition-all [&>button]:shadow-lg [&>button]:border-none">
-           <FeedbackWidget userId={user.uid} />
-        </div>
-
-        {/* MODAL DE PERFIL */}
-          {viewingProfileId && (
-                      <ProfileEditor 
-                        currentUserId={user.uid} 
-                        targetUserId={viewingProfileId} 
-                        onClose={() => setViewingProfileId(null)} 
-                        onOpenProfile={(id) => setViewingProfileId(id)} 
-                      />
-                  )}
-        
-        {/* EL LOBBY */}
-        <Lobby userId={user.uid} onJoinRoom={handleEnterRoom} onOpenProfile={(id) => setViewingProfileId(id)} />
-      </>
+      </div>
     );
   }
 
+  // ==========================================
+  // VISTA 2: DENTRO DE LA SALA (ROOM) - GLASSMORPHISM
+  // ==========================================
   return (
-    <div className="min-h-screen bg-saylo-bg text-saylo-text flex flex-col font-sans">
-      
-      <header className="h-16 border-b border-slate-800 bg-saylo-bg/90 backdrop-blur-md sticky top-0 z-50 flex items-center justify-between px-4 lg:px-8 shadow-lg">
-        <div>
-          <div className="flex items-center gap-2 text-[10px] font-bold tracking-widest text-saylo-muted uppercase mb-1">
-            <span className={`w-2 h-2 rounded-full shadow-lg ${isRoomPrivate ? 'bg-saylo-accent shadow-red-500/50' : 'bg-saylo-secondary shadow-green-500/50'}`}></span>
-            {isRoomPrivate ? 'Privada' : 'Pública'}
-          </div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-lg lg:text-xl font-black text-white tracking-tight flex items-center gap-2">
-              <span className="text-saylo-primary">#</span>{currentRoomId}
-            </h1>
-            <span className={`text-[10px] uppercase font-bold px-2 py-0.5 rounded-full border ${isHost ? 'border-saylo-primary text-saylo-primary bg-saylo-primary/10' : 'border-slate-600 text-slate-400'}`}>
-              {isHost ? 'Anfitrión' : 'Invitado'}
-            </span>
-          </div>
-        </div>
+    <div 
+      className="h-screen flex flex-col font-sans overflow-hidden bg-cover bg-center transition-all duration-1000 relative"
+      style={{ backgroundImage: `url(${BACKGROUND_IMAGES[bgIndex]})` }}
+    >
+      {/* Capa oscura para no perder contraste con el texto */}
+      <div className="absolute inset-0 bg-black/50"></div>
 
-        <div className="flex items-center gap-3">
-          {!inCall && (
-            <button 
-              onClick={() => setInCall(true)}
-              className="flex items-center gap-2 text-xs font-bold px-3 py-1.5 rounded-lg bg-green-600/20 text-green-400 hover:bg-green-600/30 border border-green-600/20 transition-all animate-in fade-in"
-            >
-              <VideoIcon size={14} /> <span className="hidden sm:inline">Unirse a Sala</span>
-            </button>
-          )}
-
-          {isHost && (
-            <button 
-              onClick={handleTogglePrivacy}
-              className="hidden sm:flex items-center gap-2 text-xs font-medium px-3 py-1.5 rounded-lg border border-slate-700 hover:bg-slate-800 text-slate-300 transition-colors"
-            >
-              {isRoomPrivate ? <Globe size={14} /> : <Lock size={14} />}
-              {isRoomPrivate ? 'Hacer Pública' : 'Hacer Privada'}
-            </button>
-          )}
-          
-          <button 
-            onClick={handleExitRoom} 
-            className="flex items-center gap-2 text-xs font-bold px-4 py-2 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/20 transition-all hover:scale-105"
-          >
-            <LogOut size={14} /> Salir
-          </button>
-        </div>
-      </header>
-
-      <main className="flex-1 p-4 lg:p-6 max-w-[1600px] mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-6 h-[calc(100vh-64px)]">
+      {/* CONTENIDO PRINCIPAL SOBRE EL FONDO */}
+      <div className="relative z-10 flex flex-col h-full">
         
-        <div className="lg:col-span-8 flex flex-col h-full max-h-full overflow-hidden">
-           <div className="bg-saylo-card rounded-2xl border border-slate-800 overflow-hidden shadow-2xl flex-1 flex flex-col relative h-full">
-              <div className="absolute top-0 left-0 w-1 h-full bg-saylo-primary opacity-50"></div>
-              <div className="p-1 h-full overflow-hidden">
-                <BibleReader roomId={currentRoomId} isHost={isHost} readingData={currentReading} />
-              </div>
-           </div>
-        </div>
-
-        <div className="lg:col-span-4 flex flex-col gap-4 h-full max-h-full overflow-hidden">
+        {/* 1. TOP BAR (Glassmorphism) */}
+        <header className="h-16 bg-black/40 backdrop-blur-md border-b border-white/10 px-4 lg:px-6 flex items-center justify-between shrink-0">
           
-          <div className="bg-saylo-card p-6 rounded-2xl border border-slate-800 shadow-xl text-center relative overflow-hidden shrink-0">
-            <div className={`absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-saylo-primary to-purple-500 transition-opacity duration-500 ${isRunning ? 'opacity-100' : 'opacity-30'}`}></div>
+          <div className="flex items-center gap-4">
+            <span className="text-[10px] font-black uppercase tracking-widest text-[#F2E3D0]/60 bg-white/5 px-2 py-1 rounded">
+              {isRoomPrivate ? 'Private' : 'Public'}
+            </span>
+            <div className="flex items-center gap-2 text-[#F2E3D0]">
+              <span className="text-sm font-black tracking-widest uppercase">
+                <span className="text-[#F2E3D0]/30 mr-1">#</span>{currentRoomId}
+              </span>
+              <span className="bg-[#F2E3D0] text-black px-2 py-0.5 rounded text-[9px] font-black uppercase tracking-wider hidden sm:inline-block ml-2">
+                {isHost ? 'Host' : 'Guest'}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-3">
             
-            <div className="flex items-center justify-center gap-2 mb-2">
-               <Clock size={14} className="text-saylo-muted" />
-               <h2 className="text-xs uppercase tracking-[0.2em] text-saylo-muted font-semibold">
-                 {mode === 'focus' ? 'Modo Enfoque' : 'Descanso'}
-               </h2>
+            {/* BOTÓN DESPLEGABLE DE PARTICIPANTES (MINI) */}
+            <div className="relative">
+              <button 
+                onClick={() => setShowParticipants(!showParticipants)}
+                className={`flex items-center gap-2 text-xs font-bold px-3 py-1.5 rounded-lg border transition-all ${showParticipants ? 'bg-white/20 border-white/30 text-white' : 'bg-white/5 border-white/10 text-white/70 hover:bg-white/10'}`}
+              >
+                <Users size={14} /> {participants.length}
+              </button>
+              
+              {/* Panel Flotante de Participantes */}
+              {showParticipants && (
+                <div className="absolute top-full right-0 mt-2 w-64 bg-black/80 backdrop-blur-xl border border-white/10 rounded-2xl shadow-2xl p-3 z-50 animate-in fade-in slide-in-from-top-2">
+                  <h3 className="text-[10px] uppercase tracking-widest text-white/50 font-bold mb-2 px-1">In Room</h3>
+                  <div className="max-h-60 overflow-y-auto custom-scrollbar">
+                     <ParticipantsList participantIds={participants} />
+                  </div>
+                </div>
+              )}
             </div>
 
-            <div className="text-6xl lg:text-7xl font-mono font-bold text-white mb-6 tabular-nums tracking-tighter drop-shadow-lg">
-              {formatTime(timeLeft)}
-            </div>
-
-            {isHost ? (
-              <div className="flex flex-col gap-3">
-                 <div className="grid grid-cols-2 gap-3">
-                    <button 
-                      onClick={toggleTimer} 
-                      className={`flex items-center justify-center gap-2 px-3 py-2 rounded-xl font-bold shadow-lg transition-all active:scale-95 ${isRunning ? 'bg-slate-700 text-white hover:bg-slate-600' : 'bg-saylo-primary text-white hover:bg-indigo-500'}`}
-                    >
-                      {isRunning ? <Pause size={16} fill="currentColor" /> : <Play size={16} fill="currentColor" />}
-                      {isRunning ? 'Pausar' : 'Iniciar'}
-                    </button>
-                    <button onClick={resetTimer} className="flex items-center justify-center gap-2 px-3 py-2 rounded-xl border border-slate-700 hover:bg-slate-700 text-slate-300 transition-colors">
-                      <RotateCcw size={16} /> Reset
-                    </button>
-                 </div>
-                 
-                 <div className="flex justify-center gap-1 p-1 bg-black/20 rounded-full w-fit mx-auto">
-                    {['focus', 'shortBreak', 'longBreak'].map(m => (
-                      <button 
-                        key={m}
-                        onClick={() => changeMode(m as 'focus' | 'shortBreak' | 'longBreak')}
-                        className={`text-[10px] px-3 py-1 rounded-full uppercase tracking-wide transition-all ${mode === m ? 'bg-white text-black font-bold shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}
-                      >
-                        {m === 'shortBreak' ? 'Corto' : m === 'longBreak' ? 'Largo' : 'Focus'}
-                      </button>
-                    ))}
-                 </div>
-              </div>
-            ) : (
-              <p className="text-saylo-muted italic text-sm animate-pulse flex justify-center items-center gap-2">
-                <span className="w-2 h-2 bg-saylo-primary rounded-full"></span> Sincronizado
-              </p>
+            {!inCall && (
+              <button onClick={() => setInCall(true)} className="flex items-center gap-2 text-xs font-bold bg-[#E8F5E9]/20 text-[#81C784] hover:bg-[#E8F5E9]/30 px-3 py-1.5 rounded-lg transition-colors border border-[#81C784]/30 backdrop-blur-sm">
+                <VideoIcon size={14} /> <span className="hidden sm:inline">Join Video</span>
+              </button>
             )}
+
+            {isHost && (
+              <button onClick={handleTogglePrivacy} className="hidden sm:flex items-center gap-2 text-xs font-bold bg-white/5 border border-white/10 text-white hover:bg-white/10 px-3 py-1.5 rounded-lg transition-colors backdrop-blur-sm">
+                {isRoomPrivate ? <Globe size={14} /> : <Lock size={14} />}
+                <span className="hidden sm:inline">{isRoomPrivate ? 'Make Public' : 'Make Private'}</span>
+              </button>
+            )}
+            
+            <button onClick={handleExitRoom} className="flex items-center gap-2 text-xs font-bold bg-red-500/20 text-red-300 hover:bg-red-500/30 px-4 py-1.5 rounded-lg transition-colors border border-red-500/30 backdrop-blur-sm">
+              <LogOut size={14} /> <span className="hidden sm:inline">Leave</span>
+            </button>
+          </div>
+        </header>
+
+        {/* 2. GRID PRINCIPAL INVERTIDO */}
+        {/* Ahora la columna izquierda es más pequeña (4) y la derecha más grande (8) */}
+        <main className="flex-1 p-4 w-full grid grid-cols-1 lg:grid-cols-12 gap-4 h-[calc(100vh-4rem)] max-w-[1800px] mx-auto overflow-hidden">
+          
+          {/* COLUMNA IZQUIERDA (Chica): TIMER Y BIBLIA */}
+          <div className="lg:col-span-3 flex flex-col gap-4 h-full max-h-full overflow-hidden shrink-0">
+            
+            {/* TIMER WIDGET (Glassmorphism) */}
+            <div className="bg-black/40 backdrop-blur-md border border-white/10 rounded-2xl p-4 flex flex-col items-center shrink-0">
+              <div className="flex items-center justify-center gap-2 mb-1">
+                 <Clock size={12} className="text-[#F2E3D0]/50" />
+                 <h2 className="text-[10px] uppercase tracking-widest text-[#F2E3D0]/60 font-black">
+                   {mode === 'focus' ? 'Focus Mode' : 'Break Time'}
+                 </h2>
+              </div>
+
+              <div className="text-5xl font-mono font-black text-white tracking-tighter my-2 drop-shadow-md">
+                {formatTime(timeLeft)}
+              </div>
+
+              {isHost ? (
+                <div className="flex flex-col w-full gap-2 mt-1">
+                   <div className="flex items-center gap-2 w-full">
+                      <button onClick={toggleTimer} className={`flex-1 flex items-center justify-center gap-2 py-2 rounded-xl text-xs font-bold transition-all ${isRunning ? 'bg-white/10 text-white hover:bg-white/20 border border-white/10' : 'bg-[#F2E3D0] text-black hover:bg-white'}`}>
+                        {isRunning ? <Pause size={14} fill="currentColor" /> : <Play size={14} fill="currentColor" />} {isRunning ? 'Pause' : 'Start'}
+                      </button>
+                      <button onClick={resetTimer} className="p-2 bg-white/5 border border-white/10 hover:bg-white/10 rounded-xl text-white transition-colors"><RotateCcw size={16} /></button>
+                   </div>
+                   
+                   <div className="flex bg-white/5 rounded-lg p-1 w-full border border-white/5">
+                      {['focus', 'shortBreak', 'longBreak'].map(m => (
+                        <button key={m} onClick={() => changeMode(m as 'focus' | 'shortBreak' | 'longBreak')} className={`flex-1 py-1 text-[9px] font-bold uppercase tracking-wider rounded-md transition-colors ${mode === m ? 'bg-white/20 shadow-sm text-white' : 'text-white/40 hover:text-white'}`}>
+                          {m === 'shortBreak' ? 'Short' : m === 'longBreak' ? 'Long' : 'Focus'}
+                        </button>
+                      ))}
+                   </div>
+                </div>
+              ) : (
+                <p className="text-[#F2E3D0]/50 text-[9px] font-bold uppercase tracking-widest animate-pulse flex justify-center items-center gap-2 mt-2">
+                  <span className="w-1.5 h-1.5 bg-[#F2E3D0] rounded-full"></span> Synchronized
+                </p>
+              )}
+            </div>
+
+            {/* BIBLE READER WIDGET (Más chico, Glassmorphism) */}
+            <div className="bg-black/40 backdrop-blur-md border border-white/10 rounded-2xl flex-1 flex flex-col relative overflow-hidden">
+               {/* IMPORTANTE: Tu componente BibleReader internamente puede tener colores blancos. 
+                   Si se ve raro aquí, tendrás que adaptar BibleReader.tsx para que use fondos transparentes. */}
+               <BibleReader roomId={currentRoomId} isHost={isHost} readingData={currentReading} />
+            </div>
+
           </div>
 
-          <ParticipantsList participantIds={participants} />
-
-          <div className="flex-1 min-h-0 bg-saylo-card rounded-2xl border border-slate-800 overflow-hidden shadow-xl relative flex flex-col">
-             <AgoraRTCProvider client={agoraClient}>
-                {inCall ? (
-                   <VideoRoom roomId={currentRoomId} onLeave={() => setInCall(false)} />
-                ) : (
-                   <ChatRoom roomId={currentRoomId} userId={user.uid} userName={user.displayName || 'Usuario'} />
-                )}
-             </AgoraRTCProvider>
+          {/* COLUMNA DERECHA (Grande): CHAT Y VIDEOCALL */}
+          <div className="lg:col-span-9 flex flex-col h-full max-h-full overflow-hidden">
+            <div className="flex-1 bg-black/40 backdrop-blur-md border border-white/10 rounded-2xl overflow-hidden relative flex flex-col shadow-2xl">
+               <AgoraRTCProvider client={agoraClient}>
+                  {inCall ? (
+                     <VideoRoom roomId={currentRoomId} onLeave={() => setInCall(false)} />
+                  ) : (
+                     <ChatRoom roomId={currentRoomId} userId={user.uid} userName={user.displayName || 'User'} />
+                  )}
+               </AgoraRTCProvider>
+            </div>
           </div>
 
-        </div>
-      </main>
-
-      <FeedbackWidget userId={user.uid} />
+        </main>
+      </div>
     </div>
   );
 }

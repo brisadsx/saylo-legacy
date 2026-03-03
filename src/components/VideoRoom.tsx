@@ -10,36 +10,30 @@ import {
   useRemoteUsers,
 } from "agora-rtc-react";
 import { Mic, MicOff, Video, VideoOff, PhoneOff, Settings } from 'lucide-react';
-import { AudioSettings } from '../components/AudioSettings'; // Asegúrate que la ruta sea correcta
+import { AudioSettings } from '../components/AudioSettings'; 
 
 interface Props {
   roomId: string;
   onLeave: () => void;
 }
 
-// Usamos variable de entorno por seguridad
 const AGORA_APP_ID = import.meta.env.VITE_AGORA_APP_ID || "761bc537f2a84810af4a5a4363ccd7e6"; 
 
 export const VideoRoom = ({ roomId, onLeave }: Props) => {
-  // 1. Estado para el menú de configuración
   const [showSettings, setShowSettings] = useState(false);
   
-  // 2. Estado para la configuración de audio (Valores por defecto)
   const [audioConfig, setAudioConfig] = useState({
-    ans: true,      // Reducción de ruido activada por defecto
-    aec: true,      // Anti-eco activado
-    musicMode: false // Modo música desactivado (mejor para voz normal)
+    ans: true,      
+    aec: true,      
+    musicMode: false 
   });
 
   const [micOn, setMicOn] = useState(true);
   const [cameraOn, setCameraOn] = useState(true);
 
-  // 3. Hooks de Agora CON la configuración dinámica
   const { localMicrophoneTrack } = useLocalMicrophoneTrack(micOn, {
-    // Si está en modo música, apagamos la reducción de ruido agresiva
     ANS: audioConfig.musicMode ? false : audioConfig.ans, 
     AEC: audioConfig.aec,
-    // Si es modo música usamos alta calidad, si no, estándar para voz
     encoderConfig: audioConfig.musicMode ? "high_quality_stereo" : "speech_standard",
   });
 
@@ -56,9 +50,9 @@ export const VideoRoom = ({ roomId, onLeave }: Props) => {
   usePublish([localMicrophoneTrack, localCameraTrack]);
 
   return (
-    <div className="flex flex-col h-full bg-black/90 rounded-2xl overflow-hidden border border-slate-800 relative">
+    // Contenedor Principal: Fondo blanco, borde sutil, sin sombras fuertes
+    <div className="flex flex-col h-full bg-white rounded-2xl overflow-hidden border border-black/10 relative shadow-sm font-sans">
       
-      {/* 4. Renderizar el menú de configuración si está abierto */}
       <AudioSettings 
         isOpen={showSettings} 
         onClose={() => setShowSettings(false)}
@@ -67,10 +61,10 @@ export const VideoRoom = ({ roomId, onLeave }: Props) => {
       />
 
       {/* GRID DE VIDEOS */}
-      <div className="flex-1 p-4 grid grid-cols-2 md:grid-cols-3 gap-4 overflow-y-auto">
+      <div className="flex-1 p-4 grid grid-cols-2 md:grid-cols-3 gap-4 overflow-y-auto bg-black/[0.02]">
         
         {/* MI VIDEO (LOCAL) */}
-        <div className="relative rounded-xl overflow-hidden bg-slate-800 aspect-video shadow-lg border border-saylo-primary/50">
+        <div className="relative rounded-xl overflow-hidden bg-black/5 aspect-video border border-black/10 flex items-center justify-center">
           <LocalUser
             audioTrack={localMicrophoneTrack}
             cameraOn={cameraOn}
@@ -78,67 +72,65 @@ export const VideoRoom = ({ roomId, onLeave }: Props) => {
             videoTrack={localCameraTrack}
             cover="https://www.agora.io/en/wp-content/uploads/2022/10/3d-spatial-audio-icon.svg"
           >
-            <div className="absolute bottom-2 left-2 bg-black/60 px-2 py-1 rounded text-xs text-white font-bold flex gap-2">
-              <span>Tú {micOn ? '' : '(Muted)'}</span>
-              {/* Indicador visual si el modo música está activo */}
-              {audioConfig.musicMode && <span className="text-purple-400">♫ Music</span>}
+            <div className="absolute bottom-3 left-3 bg-black/40 backdrop-blur-sm px-3 py-1.5 rounded-full text-[10px] text-white font-bold tracking-wider uppercase flex gap-2">
+              <span>You {micOn ? '' : '(Muted)'}</span>
+              {audioConfig.musicMode && <span className="text-purple-300">♫ Music</span>}
             </div>
           </LocalUser>
         </div>
 
         {/* USUARIOS REMOTOS */}
         {remoteUsers.map((user) => (
-          <div key={user.uid} className="relative rounded-xl overflow-hidden bg-slate-800 aspect-video shadow-lg border border-slate-700">
+          <div key={user.uid} className="relative rounded-xl overflow-hidden bg-black/5 aspect-video border border-black/10 flex items-center justify-center">
             <RemoteUser user={user}>
-               <div className="absolute bottom-2 left-2 bg-black/60 px-2 py-1 rounded text-xs text-white font-bold">
-                 Usuario {user.uid}
+               <div className="absolute bottom-3 left-3 bg-black/40 backdrop-blur-sm px-3 py-1.5 rounded-full text-[10px] text-white font-bold tracking-wider uppercase">
+                 User {user.uid}
                </div>
             </RemoteUser>
           </div>
         ))}
 
         {isConnected && remoteUsers.length === 0 && (
-          <div className="flex items-center justify-center text-slate-500 text-sm col-span-full h-32">
-            Esperando a que otros se unan a la llamada...
+          <div className="flex items-center justify-center text-black/40 text-xs font-bold uppercase tracking-widest col-span-full h-32">
+            Waiting for others to join...
           </div>
         )}
       </div>
 
-      {/* BARRA DE CONTROLES */}
-      <div className="h-16 bg-slate-900 border-t border-slate-800 flex items-center justify-center gap-4 md:gap-6">
+      {/* BARRA DE CONTROLES (Limpia y Minimalista) */}
+      <div className="h-20 bg-white border-t border-black/10 flex items-center justify-center gap-6 shrink-0">
         
-        {/* Botón de Configuración (NUEVO) */}
         <button 
           onClick={() => setShowSettings(true)}
-          className="p-3 rounded-full bg-slate-800 hover:bg-slate-700 text-slate-300 transition-all"
-          title="Configuración de Audio"
+          className="p-3.5 rounded-full bg-black/5 hover:bg-black/10 text-black/60 hover:text-black transition-colors"
+          title="Audio Settings"
         >
           <Settings size={20} />
         </button>
 
-        <div className="w-px h-8 bg-slate-700 mx-2"></div>
+        <div className="w-px h-8 bg-black/10 mx-2"></div>
 
         <button 
           onClick={() => setMicOn(prev => !prev)}
-          className={`p-3 rounded-full transition-all ${micOn ? 'bg-slate-700 hover:bg-slate-600 text-white' : 'bg-red-500/20 text-red-500 hover:bg-red-500/30'}`}
+          className={`p-4 rounded-full transition-colors ${micOn ? 'bg-black text-[#F2E3D0] hover:bg-black/80' : 'bg-[#FFEBEE] text-[#C62828] hover:bg-[#FFCDD2] border border-[#C62828]/20'}`}
         >
-          {micOn ? <Mic size={20} /> : <MicOff size={20} />}
+          {micOn ? <Mic size={22} /> : <MicOff size={22} />}
         </button>
 
         <button 
           onClick={() => setCameraOn(prev => !prev)}
-          className={`p-3 rounded-full transition-all ${cameraOn ? 'bg-slate-700 hover:bg-slate-600 text-white' : 'bg-red-500/20 text-red-500 hover:bg-red-500/30'}`}
+          className={`p-4 rounded-full transition-colors ${cameraOn ? 'bg-black text-[#F2E3D0] hover:bg-black/80' : 'bg-[#FFEBEE] text-[#C62828] hover:bg-[#FFCDD2] border border-[#C62828]/20'}`}
         >
-          {cameraOn ? <Video size={20} /> : <VideoOff size={20} />}
+          {cameraOn ? <Video size={22} /> : <VideoOff size={22} />}
         </button>
 
-        <div className="w-px h-8 bg-slate-700 mx-2"></div>
+        <div className="w-px h-8 bg-black/10 mx-2"></div>
 
         <button 
           onClick={onLeave}
-          className="p-3 rounded-full bg-red-600 hover:bg-red-500 text-white shadow-lg shadow-red-900/20 transform hover:scale-105 transition-all"
+          className="px-6 py-3.5 rounded-full bg-[#FFEBEE] border border-[#C62828]/20 hover:bg-[#FFCDD2] text-[#C62828] text-sm font-bold uppercase tracking-wider flex items-center gap-2 transition-colors"
         >
-          <PhoneOff size={20} />
+          <PhoneOff size={18} /> Leave
         </button>
       </div>
     </div>
